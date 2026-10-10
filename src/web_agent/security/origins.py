@@ -25,6 +25,10 @@ from urllib.parse import urlsplit
 ALLOWED_SCHEMES = frozenset({"https", "http"})
 MAX_URL_LENGTH = 2048
 _DEFAULT_PORTS = {"https": 443, "http": 80}
+# Los WebSockets se comparan con el origen HTTP equivalente.
+WS_SCHEME_MAP = {"ws": "http", "wss": "https"}
+# Nombres que nunca se autorizan, ni siquiera como escritorio explícito.
+_NEVER_ALLOWED_HOSTS = frozenset({"metadata", "metadata.google.internal", "instance-data"})
 
 _BLOCKED_HOSTS = frozenset(
     {
@@ -112,8 +116,12 @@ def _normalize_host(raw_host: str) -> str:
     return ascii_host
 
 
-def parse_url_origin(url: str) -> Origin:
-    """Extrae el origen normalizado de una URL de destino o lanza OriginError."""
+def parse_url_origin(url: str, *, allow_websocket: bool = False) -> Origin:
+    """Extrae el origen normalizado de una URL de destino o lanza OriginError.
+
+    Con ``allow_websocket`` los esquemas ``ws``/``wss`` se normalizan a
+    ``http``/``https`` para compararlos con los orígenes autorizados.
+    """
     if not isinstance(url, str) or not url:
         raise OriginError("URL vacía")
     if len(url) > MAX_URL_LENGTH:
@@ -125,6 +133,8 @@ def parse_url_origin(url: str) -> Origin:
     except ValueError as exc:
         raise OriginError("URL malformada") from exc
     scheme = parts.scheme.lower()
+    if allow_websocket and scheme in WS_SCHEME_MAP:
+        scheme = WS_SCHEME_MAP[scheme]
     if scheme not in ALLOWED_SCHEMES:
         raise OriginError(f"esquema no permitido: {scheme or '(ninguno)'}")
     if not parts.netloc:
@@ -139,6 +149,61 @@ def parse_url_origin(url: str) -> Origin:
     except ValueError as exc:
         raise OriginError("puerto inválido") from exc
     return Origin(scheme, host, port if port is not None else _DEFAULT_PORTS[scheme])
+
+
+def classify_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
+    """Clasifica una IP: global, private, loopback o forbidden (link-local, multicast...)."""
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    if ip.is_loopback:
+        return "loopback"
+    if ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
+        return "forbidden"
+    if ip.is_global:
+        return "global"
+    if ip.is_private:
+        return "private"
+    return "forbidden"
+
+
+def ip_allowed_for_desktop(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address, *, allow_private: bool, allow_loopback: bool
+) -> bool:
+    kind = classify_ip(ip)
+    if kind == "global":
+        return True
+    if kind == "private":
+        return allow_private
+    if kind == "loopback":
+        return allow_loopback
+    return False
+
+
+def parse_desktop_origin(url: str, *, allow_private: bool, allow_loopback: bool) -> Origin:
+    """Origen exacto del escritorio suministrado por el evaluador autenticado (§11.4).
+
+    Es una excepción estrecha: solo ese esquema/host/puerto. Puede ser privado
+    si el operador lo habilita, loopback solo con habilitación explícita, y
+    nunca enlace local, metadatos de nube, multicast o no especificado.
+    """
+    parsed = parse_url_origin(url)
+    host = parsed.host
+    if host in _NEVER_ALLOWED_HOSTS:
+        raise OriginError("destino de metadatos no permitido")
+    ip = _ip_or_none(host)
+    if ip is not None:
+        if not ip_allowed_for_desktop(ip, allow_private=allow_private, allow_loopback=allow_loopback):
+            raise OriginError("dirección del escritorio no permitida por la política")
+        return parsed
+    if _NUMERIC_HOST.fullmatch(host):
+        raise OriginError("host numérico no canónico")
+    if host in _BLOCKED_HOSTS or host.endswith(".localhost"):
+        if not allow_loopback:
+            raise OriginError("host local no permitido")
+        return parsed
+    if is_private_or_local_host(host) and not allow_private:
+        raise OriginError("host privado no permitido")
+    return parsed
 
 
 def parse_allowed_origin(origin: str) -> Origin:
