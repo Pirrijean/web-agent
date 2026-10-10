@@ -112,6 +112,50 @@ class Executor:
             except Exception:
                 pass
 
+    @staticmethod
+    async def _send_text(page, text: str, delay: int) -> None:
+        """Escribe ``text`` de forma que también llegue por VNC.
+
+        ``keyboard.type`` envía los caracteres fuera del teclado US (á, í, ñ, €…) solo
+        como ``insertText``, sin ``keydown``; noVNC traduce únicamente ``keydown`` a
+        keysyms VNC, así que esos caracteres se perdían ("Papelería" → "Papelera").
+        Los tramos ASCII siguen por ``keyboard.type``; cada carácter no ASCII se envía
+        como tecla real por CDP (``key``/``text`` = carácter → keysym Latin-1/Unicode).
+        """
+        cdp = None
+        try:
+            i, n = 0, len(text)
+            while i < n:
+                j = i
+                while j < n and text[j].isascii():
+                    j += 1
+                if j > i:
+                    await page.keyboard.type(text[i:j], delay=delay)
+                if j < n:
+                    ch = text[j]
+                    if cdp is None:
+                        try:
+                            cdp = await page.context.new_cdp_session(page)
+                        except Exception:
+                            cdp = False  # sin CDP (otro navegador o doble de pruebas)
+                    if cdp:
+                        await cdp.send("Input.dispatchKeyEvent",
+                                       {"type": "keyDown", "key": ch, "text": ch, "unmodifiedText": ch})
+                        await cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", "key": ch})
+                    else:
+                        await page.keyboard.type(ch, delay=delay)
+                    if delay:
+                        await asyncio.sleep(delay / 1000.0)
+                    j += 1
+                i = j
+        finally:
+            text = ""
+            if cdp:
+                try:
+                    await cdp.detach()
+                except Exception:
+                    pass
+
     async def _navigate(self, v: ValidatedAction, ctx: TaskContext, timeout: float) -> ExecutionOutcome:
         page = self._page()
         if not self.network_validator.is_url_allowed(v.action.url):
@@ -158,7 +202,7 @@ class Executor:
                 await page.keyboard.press("Control+a")
                 await page.keyboard.press("Backspace")
                 await asyncio.sleep(0.05)
-            await page.keyboard.type(text, delay=delay)
+            await self._send_text(page, text, delay)
         except BaseException:
             if clear:
                 await self._release_modifiers(page, ("Control",))

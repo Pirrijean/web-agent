@@ -48,6 +48,10 @@ class VerificationRequest:
     history: tuple[str, ...] = ()
     claimed_evidence: Optional[str] = None
     local_hints: tuple[str, ...] = ()  # señales locales no confiables (p.ej. textos leídos por OCR)
+    # Pantalla en el instante en que el planificador declaró «done» (antes de esperar estabilidad):
+    # conserva confirmaciones transitorias (toasts) que ya no están en la captura actual.
+    prior_image_bytes: Optional[bytes] = field(default=None, repr=False)
+    prior_image_mime: Optional[str] = None
     max_output_tokens: int = 512
     timeout_seconds: float = 60.0
 

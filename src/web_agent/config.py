@@ -22,7 +22,9 @@ ModelProvider = Literal["openrouter", "scripted"]
 def _load_env_file() -> None:
     candidates = (
         Path(".env"),
+        Path(".env.pruebas"),
         Path(__file__).resolve().parents[2] / ".env",
+        Path(__file__).resolve().parents[2] / ".env.pruebas",
     )
     for env_path in candidates:
         if env_path.is_file():
@@ -38,7 +40,6 @@ def _load_env_file() -> None:
                         os.environ[k] = v
             except Exception:
                 pass
-            break
 
 
 def _env_str(name: str, default: str | None = None) -> str | None:
@@ -99,14 +100,14 @@ class Settings:
 
     # --- Modelo ---
     model_provider: ModelProvider = "openrouter"
-    model_name: str = "google/gemini-2.0-flash-001"
+    model_name: str = "google/gemini-3.8-flash"
     openrouter_api_key: str | None = field(default=None, repr=False)
     model_timeout_seconds: float = 60.0
     max_output_tokens: int = 1024
     max_model_calls_per_task: int = 60
     max_task_cost_usd: Decimal = Decimal("1.00")
-    price_input_per_mtok_usd: Decimal = Decimal("0.10")
-    price_output_per_mtok_usd: Decimal = Decimal("0.40")
+    price_input_per_mtok_usd: Decimal = Decimal("0.75")
+    price_output_per_mtok_usd: Decimal = Decimal("3.75")
     max_image_bytes: int = 3_500_000
 
     # --- Ejecución ---
@@ -123,6 +124,7 @@ class Settings:
     clear_before_default: bool = True  # escribir sobre texto concatena: seleccionar todo antes
     settle_max_seconds: float = 1.5  # la pantalla tarda hasta 1 s en repintar tras un clic
     settle_stable_seconds: float = 0.3
+    persist_settle_seconds: float = 2.5  # espera mínima tras guardar/aplicar (evita doble envío)
     max_concurrent_tasks: int = 2
     worker_mode: WorkerMode = "subprocess"
 
@@ -173,20 +175,31 @@ class Settings:
         if worker_mode not in ("subprocess", "inprocess"):
             worker_mode = "subprocess"
         return cls(
-            bearer_token=_env_str("EVALUATION_BEARER_TOKEN") or _env_str("WEB_AGENT_BEARER_TOKEN"),
+            bearer_token=(
+                _env_str("EVALUATION_BEARER_TOKEN")
+                or _env_str("TEAM_TOKEN")
+                or _env_str("WEB_AGENT_BEARER_TOKEN")
+                or _env_str("BEARER_TOKEN")
+                or _env_str("TOKEN")
+            ),
             host=_env_str("HOST", "0.0.0.0"),
             port=_env_int("PORT", 8000, 1, 65535),
             max_request_body_bytes=_env_int("WEB_AGENT_MAX_BODY_BYTES", 64 * 1024, 1024, 1024 * 1024),
             expose_docs=_env_bool("WEB_AGENT_EXPOSE_DOCS", False),
             model_provider=provider,  # type: ignore[arg-type]
-            model_name=_env_str("MODEL_NAME", "google/gemini-2.0-flash-001"),
-            openrouter_api_key=_env_str("OPENROUTER_API_KEY"),
+            model_name=_env_str("MODEL_NAME", "google/gemini-3.8-flash"),
+            openrouter_api_key=(
+                _env_str("OPENROUTER_API_KEY")
+                or _env_str("OPEN_ROUTER_API_KEY")
+                or _env_str("OPENROUTER_KEY")
+                or _env_str("API_KEY")
+            ),
             model_timeout_seconds=_env_float("WEB_AGENT_MODEL_TIMEOUT_SECONDS", 60.0, 1.0, 120.0),
             max_output_tokens=_env_int("WEB_AGENT_MAX_OUTPUT_TOKENS", 1024, 64, 8192),
             max_model_calls_per_task=_env_int("WEB_AGENT_MAX_MODEL_CALLS", 60, 1, 500),
             max_task_cost_usd=_env_decimal("WEB_AGENT_MAX_TASK_COST_USD", "1.00"),
-            price_input_per_mtok_usd=_env_decimal("WEB_AGENT_PRICE_INPUT_PER_MTOK", "0.10"),
-            price_output_per_mtok_usd=_env_decimal("WEB_AGENT_PRICE_OUTPUT_PER_MTOK", "0.40"),
+            price_input_per_mtok_usd=_env_decimal("WEB_AGENT_PRICE_INPUT_PER_MTOK", "0.75"),
+            price_output_per_mtok_usd=_env_decimal("WEB_AGENT_PRICE_OUTPUT_PER_MTOK", "3.75"),
             max_image_bytes=_env_int("WEB_AGENT_MAX_IMAGE_BYTES", 3_500_000, 100_000, 20_000_000),
             task_timeout_seconds=_env_float("TASK_TIMEOUT_SECONDS", HARD_TASK_TIMEOUT_SECONDS, 1.0, HARD_TASK_TIMEOUT_SECONDS),
             max_actions_per_task=_env_int("WEB_AGENT_MAX_ACTIONS", 40, 1, 200),
@@ -199,6 +212,7 @@ class Settings:
             clear_before_default=_env_bool("WEB_AGENT_CLEAR_BEFORE_DEFAULT", True),
             settle_max_seconds=_env_float("WEB_AGENT_SETTLE_MAX_SECONDS", 1.5, 0.0, 5.0),
             settle_stable_seconds=_env_float("WEB_AGENT_SETTLE_STABLE_SECONDS", 0.3, 0.0, 2.0),
+            persist_settle_seconds=_env_float("WEB_AGENT_PERSIST_SETTLE_SECONDS", 2.5, 0.0, 10.0),
             max_concurrent_tasks=_env_int("MAX_CONCURRENT_TASKS", 2, 1, 16),
             worker_mode=worker_mode,  # type: ignore[arg-type]
             headless=_env_bool("WEB_AGENT_HEADLESS", True),
