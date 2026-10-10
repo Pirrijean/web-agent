@@ -1,0 +1,13 @@
+{
+    "skill_name": "secure_filesystem_audit",
+    "description": "Permite al agente guardar trazas, logs y capturas de pantalla de la ejecución web para su posterior auditoría.",
+    "type": "mcp_server",
+    "execution": {
+        "command": "npx",
+        "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/ruta/absoluta/a/web-agent/evidencia"
+        ]
+    }
+}

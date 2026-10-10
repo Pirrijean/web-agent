@@ -1,0 +1,31 @@
+# Perfil de Tarea de Ejemplo (Fase 5)
+profile:
+  id: portal_demo_v1
+  version: "1.0"
+
+  browser:
+    engine: chromium
+    headless: true
+
+  security:
+    allowed_origins:
+      - "https://portal.example.com"
+      - "https://test.example.org"
+    allow_downloads: false
+    allow_arbitrary_code: false
+
+  permissions:
+    navigation: true
+    read_visible_data: true
+    fill_forms: true
+    submit_forms: false    # <-- Previene clicks accidentales en "Comprar" o "Enviar"
+    delete_records: false
+
+  execution:
+    max_steps: 40
+    max_retries_per_action: 2
+    task_timeout_seconds: 300
+
+  audit:
+    record_action_metadata: true
+    redact_sensitive_values: true

@@ -1,0 +1,18 @@
+{
+    "skill_name": "playwright_browser_control",
+    "description": "Permite al agente abrir navegadores, navegar, identificar elementos del DOM semánticamente e interactuar con páginas web de forma segura.",
+    "type": "mcp_server",
+    "execution": {
+        "command": "npx",
+        "args": [
+            "-y",
+            "@modelcontextprotocol/server-playwright"
+        ]
+    },
+    "security_policy": {
+        "require_human_approval_for_destructive_actions": true,
+        "allowed_domains": [
+            "*"
+        ]
+    }
+}
