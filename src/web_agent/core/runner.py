@@ -6,6 +6,7 @@ from typing import Optional
 from pydantic import ValidationError
 
 from web_agent.audit.events import AuditEvent, AuditLogger
+from web_agent.browser.observe import DOMObserver
 from web_agent.browser.session import SecureBrowserSession
 from web_agent.core.errors import (
     ActionNotVerifiedError,
@@ -91,7 +92,7 @@ class AgentRunner:
                 steps_executed += 1
 
                 # 1. Observar
-                page_state = await self._get_page_state()
+                page_state, current_obs_id = await self._get_page_state()
 
                 # 2. Proponer (El LLM delibera sin tocar el DOM)
                 try:
@@ -136,6 +137,18 @@ class AgentRunner:
                         final_state=FinalState.BLOCKED,
                         steps_executed=steps_executed,
                         reason="Acción rechazada por validación de esquema.",
+                    )
+
+                # Validar que la acción corresponda a la observación activa
+                if action.observation_id and current_obs_id and action.observation_id != current_obs_id:
+                    safe_err = "Acción referenciando una observación obsoleta o manipulada."
+                    logger.error(safe_err)
+                    return RunResult(
+                        run_id=run_id,
+                        final_state=FinalState.BLOCKED,
+                        steps_executed=steps_executed,
+                        reason=safe_err,
+                        blocked_requests=1,
                     )
 
                 # WEB-02: Validar con política de seguridad ANTES de logging y de procesar DONE / ASK_HUMAN
@@ -301,25 +314,18 @@ class AgentRunner:
                 "Auditoría no disponible; ejecución detenida."
             ) from None
 
-    async def _get_page_state(self) -> str:
-        """WEB-04: No enviar observaciones sin permiso y sin redacción."""
+    async def _get_page_state(self) -> tuple[str, Optional[str]]:
+        """WEB-04: Extrae observación acotada y segura retornando prompt y observation_id."""
         if not self.profile.permissions.read_visible_data:
-            return "Observación web no autorizada por el perfil."
+            return "Observación web no autorizada por el perfil.", None
 
         page = self.browser.page
         if page is None or page.is_closed():
             raise ActionNotVerifiedError("No existe una página observable.")
 
-        try:
-            title = await page.title()
-        except Exception:
-            title = ""
+        snapshot = await DOMObserver.capture_observation(page)
+        return DataRedactor.redact(snapshot.to_model_prompt()), snapshot.observation_id
 
-        observation = PageObservation(
-            url=page.url,
-            title=title[:300],
-        )
-        return DataRedactor.redact(observation.to_model_prompt())
 
     async def _execute_action(self, action: ProposedAction):
         """WA-02: Rechazar operaciones no implementadas; no permitir falsos éxitos."""

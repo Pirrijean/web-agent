@@ -84,6 +84,7 @@ class ProposedAction(_Strict):
     """
 
     action_type: ActionType
+    observation_id: Optional[str] = Field(None, max_length=100, description="ID de la observación vigente")
     target_element_id: Optional[str] = Field(None, pattern=ELEMENT_ID_PATTERN)
     value: Optional[str] = Field(None, max_length=MAX_TEXT_VALUE, description="Texto a introducir si es un fill")
     url: Optional[str] = Field(None, max_length=MAX_URL_LENGTH, description="URL destino si es navigate")
