@@ -44,7 +44,7 @@ def make_client(tmp_path):
     clients = []
 
     def _make(factory=None, **settings_kw):
-        settings = Settings(bearer_token=TOKEN, model_provider="scripted", worker_mode="inprocess",
+        settings = Settings(bearer_token=TOKEN, model_provider="scripted", worker_mode="inprocess", verify_stability_seconds=0, settle_max_seconds=0,
                             audit_dir=str(tmp_path / "audit"), **settings_kw)
         factory = factory or scripted_factory()
         manager = TaskManager(
@@ -174,3 +174,25 @@ def test_queue_time_counts_against_deadline(make_client):
     d2 = wait_terminal(c, second, timeout=8)
     assert d2["status"] == "fallida" and d2["estado_interno"] == "timed_out"
     wait_terminal(c, first, timeout=8)
+
+
+# --------------------------------------------------------------------------- consola web
+def test_console_is_public_but_never_embeds_the_token(make_client):
+    c = make_client()
+    r = c.get("/")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert TOKEN not in r.text and "eval-token" not in r.text
+    csp = r.headers["content-security-policy"]
+    assert "script-src 'self'" in csp and "frame-ancestors 'none'" in csp
+    assert r.headers["x-content-type-options"] == "nosniff"
+    for asset in ("/static/app.js", "/static/app.css"):
+        a = c.get(asset)
+        assert a.status_code == 200 and TOKEN not in a.text
+        assert a.headers["content-security-policy"] == csp
+    # La consola no abre ninguna puerta en la API.
+    assert c.get("/health").status_code == 401
+
+
+def test_console_shows_docs_link_only_when_docs_exposed(make_client):
+    assert 'data-docs="false"' in make_client().get("/").text
+    assert 'data-docs="true"' in make_client(expose_docs=True).get("/").text

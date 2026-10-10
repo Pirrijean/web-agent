@@ -83,6 +83,32 @@ class NetworkPolicyValidator:
                 return False
         return True
 
+    def websocket_guard_config(self) -> dict:
+        """Orígenes (scheme://host:port, ws->http) y prefijos de ruta permitidos para WebSocket.
+
+        Lo consume el guardián en página del navegador: misma regla que ``is_websocket_allowed``.
+        """
+        origins = set()
+        if self.desktop_origin is not None:
+            origins.add(self.desktop_origin)
+        origins |= {o for o in self.allowed_origins if not is_private_or_local_host(o.host)}
+        return {
+            "origins": sorted(f"{o.scheme}://{o.host}:{o.port}" for o in origins),
+            "prefixes": list(self.websocket_path_prefixes),
+        }
+
+    def resolver_hosts(self) -> list[str]:
+        """Nombres de host que el navegador puede resolver (vacío si hay IP literales o proxy)."""
+        if self.egress_proxy:
+            return []
+        hosts = []
+        origins = ([self.desktop_origin] if self.desktop_origin else []) + sorted(self.allowed_origins)
+        for o in origins:
+            if o.host.replace(".", "").isdigit() or ":" in o.host:
+                return []  # IP literal: las reglas de resolución no aplican; se confía en las demás capas
+            hosts.append(o.host)
+        return hosts
+
     # ------------------------------------------------------------------ DNS
     async def _resolve_ok(self, origin: Origin) -> bool:
         key = (origin.host, origin.port)

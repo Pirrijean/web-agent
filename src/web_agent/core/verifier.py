@@ -76,6 +76,7 @@ class Verifier:
         claimed_evidence: Optional[str],
         timeout: float,
         max_output_tokens: int,
+        local_hints: tuple[str, ...] = (),
     ) -> VerificationResult:
         obs = state.current_visual
         if obs is None or state.current_image is None or state.observation_stale:
@@ -90,6 +91,7 @@ class Verifier:
             image_mime=f"image/{obs.image_format}",
             history=tuple(r.to_prompt_line() for r in state.history),
             claimed_evidence=claimed_evidence,
+            local_hints=tuple(h[:200] for h in local_hints[:6]),
             max_output_tokens=max_output_tokens,
             timeout_seconds=timeout,
         )

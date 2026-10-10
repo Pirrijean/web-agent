@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from typing import Optional
@@ -19,6 +20,39 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 logger = logging.getLogger(__name__)
 
+
+# Guardián de WebSocket en página: se ejecuta antes que cualquier script de la página.
+WS_GUARD_JS = r"""(() => {
+  const cfg = __CONFIG__;
+  const allowed = new Set(cfg.origins);
+  const Native = window.WebSocket;
+  if (!Native || Native.__waGuarded) return;
+  const norm = (raw) => {
+    try {
+      const u = new URL(String(raw), location.href);
+      const scheme = u.protocol === 'wss:' ? 'https' : u.protocol === 'ws:' ? 'http' : null;
+      if (!scheme) return null;
+      const port = u.port || (scheme === 'https' ? '443' : '80');
+      return { origin: `${scheme}://${u.hostname.toLowerCase()}:${port}`, path: u.pathname || '/' };
+    } catch (e) { return null; }
+  };
+  const ok = (raw) => {
+    const n = norm(raw);
+    if (!n || !allowed.has(n.origin)) return false;
+    return !cfg.prefixes.length || cfg.prefixes.some((p) => n.path.startsWith(p));
+  };
+  const Guarded = new Proxy(Native, {
+    construct(target, args, newTarget) {
+      if (!ok(args[0])) {
+        try { window.__waWsBlocked && window.__waWsBlocked(String(args[0]).slice(0, 200)); } catch (e) {}
+        return Reflect.construct(target, ['wss://blocked.invalid/'], newTarget);  // falla sin tráfico útil
+      }
+      return Reflect.construct(target, args, newTarget);
+    },
+    get(target, prop, receiver) { return prop === '__waGuarded' ? true : Reflect.get(target, prop, receiver); },
+  });
+  Object.defineProperty(window, 'WebSocket', { value: Guarded, writable: false, configurable: false });
+})();"""
 
 class SecureBrowserSession:
     def __init__(
@@ -30,9 +64,11 @@ class SecureBrowserSession:
         viewport_width: int = 1280,
         viewport_height: int = 800,
         close_timeout: float = 2.0,
+        websocket_mode: str = "native_guard",
     ):
         self.headless = headless
         self.chromium_sandbox = chromium_sandbox
+        self.websocket_mode = websocket_mode  # "native_guard" (compatible con noVNC) | "route"
         self.network_validator = network_validator
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
@@ -55,9 +91,17 @@ class SecureBrowserSession:
             raise RuntimeError("La sesión ya está iniciada.")
         try:
             self._playwright = await async_playwright().start()
+            launch_args = []
+            hosts = self.network_validator.resolver_hosts() if hasattr(self.network_validator, "resolver_hosts") else []
+            if hosts:
+                # Egreso a nivel de navegador (todas las vías: páginas, iframes, workers): solo los
+                # hosts autorizados resuelven DNS.
+                excludes = ", ".join(f"EXCLUDE {h}" for h in hosts)
+                launch_args.append(f"--host-resolver-rules=MAP * ~NOTFOUND, {excludes}")
             self._browser = await self._playwright.chromium.launch(
                 headless=self.headless,
                 chromium_sandbox=self.chromium_sandbox,
+                args=launch_args,
             )
             context_kwargs = {
                 "accept_downloads": False,
@@ -95,7 +139,18 @@ class SecureBrowserSession:
                     await ws.close(code=1008, reason="blocked by policy")
 
             await self._context.route("**/*", route_handler)
-            await self._context.route_web_socket("**/*", ws_handler)
+            if self.websocket_mode == "route":
+                await self._context.route_web_socket("**/*", ws_handler)
+            else:
+                # route_web_socket sustituye window.WebSocket por un objeto simulado que noVNC
+                # rechaza ("Raw channel missing property: send"). El guardián en página conserva el
+                # WebSocket nativo para el origen autorizado y desvía cualquier otro destino.
+                async def report_blocked(source, url):
+                    self.blocked_websockets += 1
+
+                await self._context.expose_binding("__waWsBlocked", report_blocked)
+                config = json.dumps(validator.websocket_guard_config())
+                await self._context.add_init_script(WS_GUARD_JS.replace("__CONFIG__", config))
             self.page = await self._context.new_page()
             self.page_id = f"pag_{uuid.uuid4().hex[:16]}"
             self.page.on("framenavigated", self._on_frame_navigated)
@@ -111,11 +166,28 @@ class SecureBrowserSession:
         if self.page is not None and frame == self.page.main_frame:
             self.navigation_epoch += 1
 
+    def expect_password_prompt(self, secret) -> None:
+        """Durante la conexión del visor (vnc_lite), el ``prompt()`` de contraseña se
+        responde una vez con el secreto. Fuera de esa ventana, nada se acepta."""
+        self._prompt_secret = secret or None
+
     def _on_dialog(self, dialog) -> None:
         # Diálogos JS nativos bloquean la página. Se descartan (nunca se aceptan)
         # y se registra el evento; aceptar podría confirmar una operación (§11.5).
+        secret = getattr(self, "_prompt_secret", None)
+        if (secret and dialog.type == "prompt" and "password" in (dialog.message or "").lower()
+                and self.page is not None and self._is_desktop_page(self.page.url)):
+            self._prompt_secret = None
+            asyncio.ensure_future(dialog.accept(secret))
+            return
         self.dialogs_dismissed += 1
         asyncio.ensure_future(dialog.dismiss())
+
+    def _is_desktop_page(self, url: str) -> bool:
+        try:
+            return bool(self.network_validator) and self.network_validator.is_url_allowed(url)
+        except Exception:
+            return False
 
     async def stop(self):
         resources = (

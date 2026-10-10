@@ -40,6 +40,9 @@ class SkillRuntime(Protocol):
     async def observe_visual(self) -> str:
         """Captura una observación visual nueva y devuelve su hash de imagen."""
 
+    async def connect_viewer(self) -> str:
+        """Conecta el visor VNC del navegador (noVNC). Devuelve el estado de conexión."""
+
 
 class Skill(ABC):
     spec: SkillSpec

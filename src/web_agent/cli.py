@@ -45,6 +45,9 @@ async def execute_run(args) -> int:
         print("Error: configure OPENROUTER_API_KEY o WEB_AGENT_MODEL_PROVIDER=scripted.")
         return 1
     if args.desktop_url:
+        from web_agent.security.origins import viewer_url_for_desktop
+
+        args.desktop_url = viewer_url_for_desktop(args.desktop_url)
         profile = build_desktop_profile(
             task_id="cli",
             desktop_url=args.desktop_url,

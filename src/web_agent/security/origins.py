@@ -20,7 +20,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from typing import NamedTuple
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 ALLOWED_SCHEMES = frozenset({"https", "http"})
 MAX_URL_LENGTH = 2048
@@ -204,6 +204,36 @@ def parse_desktop_origin(url: str, *, allow_private: bool, allow_loopback: bool)
     if is_private_or_local_host(host) and not allow_private:
         raise OriginError("host privado no permitido")
     return parsed
+
+
+def viewer_url_for_desktop(url: str) -> str:
+    """URL que abre el navegador para un escritorio dado.
+
+    El evaluador entrega el WebSocket VNC (``wss://host/websockify``). El agente opera
+    a través del visor noVNC servido en la raíz del MISMO origen, indicándole la ruta
+    del WebSocket. La contraseña nunca viaja en la URL: se introduce en el visor.
+    Las URL http(s) se devuelven sin cambios.
+    """
+    url = url.strip()
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    if scheme in ("http", "https") and not parts.query and parts.path in ("", "/", "/vnc.html", "/websockify"):
+        # Raíz del escritorio (noVNC sin parámetros se queda esperando): se abre el visor completo.
+        if not parts.hostname or parts.username or parts.password:
+            raise OriginError("URL de escritorio inválida")
+        query = urlencode({"autoconnect": "1", "resize": "scale", "reconnect": "1", "path": "websockify"})
+        return urlunsplit((scheme, parts.netloc, "/", query, ""))
+    if scheme not in WS_SCHEME_MAP:
+        return url
+    if not parts.hostname:
+        raise OriginError("WebSocket de escritorio sin host")
+    if parts.username or parts.password:
+        raise OriginError("credenciales embebidas en la URL")
+    ws_path = parts.path.lstrip("/") or "websockify"
+    if parts.query:
+        ws_path = f"{ws_path}?{parts.query}"
+    query = urlencode({"autoconnect": "1", "resize": "scale", "reconnect": "1", "path": ws_path})
+    return urlunsplit((WS_SCHEME_MAP[scheme], parts.netloc, "/", query, ""))
 
 
 def parse_allowed_origin(origin: str) -> Origin:

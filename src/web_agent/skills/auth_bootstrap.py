@@ -51,6 +51,9 @@ class DesktopAuthAndBootstrap(Skill):
         )
         if not navigated:
             return False
+        status = await runtime.connect_viewer()
+        if status == "auth_failed":
+            return False
         await self.wait_until_stable(runtime, ctx)
         return True
 

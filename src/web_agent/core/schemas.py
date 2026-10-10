@@ -136,7 +136,7 @@ _ACTION_FIELDS: dict[ActionType, tuple[frozenset[str], frozenset[str]]] = {
     ActionType.SCROLL: (frozenset(), frozenset({"x", "y", "delta_x", "delta_y"})),
     ActionType.WAIT: (frozenset({"duration_seconds"}), frozenset()),
     ActionType.EXTRACT: (frozenset({"target_element_id"}), frozenset()),
-    ActionType.DONE: (frozenset(), frozenset({"claimed_evidence"})),
+    ActionType.DONE: (frozenset(), frozenset({"claimed_evidence", "answer"})),
     ActionType.ASK_HUMAN: (frozenset(), frozenset()),
 }
 
@@ -214,9 +214,12 @@ class ProposedAction(_Strict):
     delta_y: Optional[int] = Field(None, ge=-MAX_SCROLL_DELTA, le=MAX_SCROLL_DELTA)
     duration_seconds: Optional[float] = Field(None, ge=0.1, le=MAX_WAIT_SECONDS)
     claimed_evidence: Optional[str] = Field(None, max_length=500)
+    # Solo en ``done`` de una pregunta: el valor pedido (número primero; varios datos con "; ").
+    answer: Optional[str] = Field(None, min_length=1, max_length=300)
 
     @field_validator(
-        "reasoning", "text", "target_description", "expected_effect", "screen_summary", "claimed_evidence"
+        "reasoning", "text", "target_description", "expected_effect", "screen_summary", "claimed_evidence",
+        "answer",
     )
     @classmethod
     def _no_nul(cls, v: Optional[str]) -> Optional[str]:

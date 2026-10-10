@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>web-agent · Consola</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body data-docs="__DOCS_ENABLED__">
+  <header class="topbar">
+    <div class="wrap topbar__inner">
+      <a class="brand" href="/">web-agent</a>
+      <div class="topbar__right">
+        <span class="health" id="health" data-state="idle" aria-live="polite">
+          <span class="dot" aria-hidden="true"></span><span id="healthText">Sin conectar</span><span class="health__detail" id="healthDetail"></span>
+        </span>
+        <button class="btn btn--ghost" id="tokenToggle" type="button" aria-expanded="false" aria-controls="tokenPanel">Acceso</button>
+      </div>
+    </div>
+    <div class="wrap token" id="tokenPanel" hidden>
+      <form class="token__form" id="tokenForm" autocomplete="off">
+        <label class="sr-only" for="tokenInput">Token de acceso</label>
+        <input class="input" id="tokenInput" type="password" placeholder="Token Bearer" spellcheck="false" required>
+        <button class="btn btn--primary" type="submit">Conectar</button>
+        <button class="btn btn--ghost" id="tokenClear" type="button">Olvidar</button>
+      </form>
+      <p class="hint">El token se guarda solo en esta pestaña y se envía en la cabecera <code>Authorization</code>.</p>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <section class="panel" aria-labelledby="newTitle">
+      <h1 class="title" id="newTitle">Nueva tarea</h1>
+      <p class="lede">El agente opera el escritorio remoto mediante capturas de pantalla y acciones de ratón y teclado.</p>
+
+      <form id="taskForm" class="form" autocomplete="off" novalidate>
+        <div class="field">
+          <label for="task">Instrucción</label>
+          <textarea class="input" id="task" rows="5" maxlength="4000" required
+                    placeholder="Describe el objetivo en lenguaje natural"></textarea>
+        </div>
+        <div class="field">
+          <label for="desktopUrl">URL del escritorio</label>
+          <input class="input" id="desktopUrl" type="url" inputmode="url" required spellcheck="false"
+                 placeholder="https://escritorio.ejemplo/vnc.html">
+        </div>
+        <div class="field">
+          <label for="desktopPassword">Contraseña del escritorio</label>
+          <input class="input" id="desktopPassword" type="password" autocomplete="new-password" spellcheck="false">
+          <span class="hint">No se almacena ni se muestra en los registros.</span>
+        </div>
+        <p class="error" id="formError" role="alert" hidden></p>
+        <div class="form__actions">
+          <button class="btn btn--primary" id="submitBtn" type="submit">Enviar tarea</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel panel--tasks" aria-labelledby="tasksTitle">
+      <div class="panel__head">
+        <h2 class="title" id="tasksTitle">Tareas</h2>
+        <button class="link" id="clearTasks" type="button" hidden>Limpiar</button>
+      </div>
+      <p class="empty" id="emptyState">Aún no hay tareas en esta sesión.</p>
+      <ol class="tasks" id="taskList"></ol>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <span>Plazo máximo por tarea: 300 s</span>
+    <span class="footer__links">
+      <a href="/docs" target="_blank" rel="noopener" id="docsLink" hidden>Referencia de la API</a>
+    </span>
+  </footer>
+
+  <template id="taskTpl">
+    <li class="task">
+      <button class="task__row" type="button" aria-expanded="false">
+        <span class="status"><span class="dot" aria-hidden="true"></span><span class="status__text"></span></span>
+        <span class="task__text"></span>
+        <span class="task__meta"></span>
+      </button>
+      <dl class="task__detail" hidden>
+        <div><dt>Resumen</dt><dd data-k="resumen"></dd></div>
+        <div><dt>Verificación</dt><dd data-k="verificacion"></dd></div>
+        <div><dt>Pasos</dt><dd data-k="steps"></dd></div>
+        <div><dt>Estado interno</dt><dd data-k="interno"></dd></div>
+        <div><dt>ID</dt><dd data-k="id" class="mono"></dd></div>
+      </dl>
+    </li>
+  </template>
+</body>
+</html>

@@ -9,11 +9,13 @@ from __future__ import annotations
 import logging
 import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from web_agent.api.auth import require_bearer
 from web_agent.api.dto import TaskCreatedResponse, TaskCreateRequest, TaskStatusResponse
@@ -23,6 +25,19 @@ from web_agent.service.task_manager import InvalidTaskError, TaskManager
 
 logger = logging.getLogger(__name__)
 TASK_ID_RE = re.compile(r"^task_[a-f0-9]{20}$")
+STATIC_DIR = Path(__file__).parent / "static"
+
+# La consola es una página estática sin secretos: el token lo introduce el usuario.
+CONSOLE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "Cache-Control": "no-cache",
+}
 
 
 def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskManager] = None) -> FastAPI:
@@ -44,6 +59,14 @@ def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskM
     )
     app.state.settings = settings
     app.state.task_manager = manager
+
+    @app.middleware("http")
+    async def console_headers(request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.startswith("/static/"):
+            response.headers.update(CONSOLE_HEADERS)
+        return response
 
     @app.middleware("http")
     async def limit_body(request: Request, call_next):
@@ -74,6 +97,15 @@ def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskM
         logger.error("Error interno en %s: %s", request.url.path, type(exc).__name__)
         return JSONResponse({"detail": "Error interno."}, status_code=500)
 
+    console_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
+        "__DOCS_ENABLED__", "true" if settings.expose_docs else "false"
+    )
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def console():
+        return HTMLResponse(console_html)
+
     @app.get("/health", dependencies=[Depends(require_bearer)])
     async def health():
         info = manager.health()
@@ -95,6 +127,7 @@ def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskM
         if record is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada.")
         return TaskStatusResponse(
+            estado=record.public_status,
             task_id=record.task_id,
             status=record.public_status,
             resumen=record.summary,

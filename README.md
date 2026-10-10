@@ -18,10 +18,9 @@
 4. [Documentación Técnica y Entregables](#-documentación-técnica-y-entregables)
 5. [Contrato de la API de Evaluación Oficial](#-contrato-de-la-api-de-evaluación-oficial)
 6. [Guía de Inicio Rápido](#-guía-de-inicio-rápido)
-7. [Ejecución por Línea de Comandos (CLI)](#-ejecución-por-línea-de-comandos-cli)
-8. [Pruebas Automatizadas y Calidad](#-pruebas-automatizadas-y-calidad)
-9. [Despliegue Contenerizado con Docker](#-despliegue-contenerizado-con-docker)
-10. [Seguridad y Mitigación de Riesgos](#-seguridad-y-mitigación-de-riesgos)
+7. [Pruebas Automatizadas y Calidad](#-pruebas-automatizadas-y-calidad)
+8. [Despliegue Contenerizado con Docker](#-despliegue-contenerizado-con-docker)
+9. [Seguridad y Mitigación de Riesgos](#-seguridad-y-mitigación-de-riesgos)
 
 ---
 
@@ -81,7 +80,8 @@ web-agent/
 ├── src/
 │   └── web_agent/
 │       ├── api/               # API REST FastAPI para el evaluador del hackathon
-│       │   ├── app.py         # Endpoints: GET /health, POST /tasks, GET /tasks/{id}
+│       │   ├── app.py         # Endpoints: GET /health, POST /tasks, GET /tasks/{id} y consola /
+│       │   ├── static/        # Consola web (HTML/CSS/JS estáticos, sin secretos, CSP estricta)
 │       │   ├── auth.py        # Validación en tiempo constante de token Bearer
 │       │   └── dto.py         # Esquemas Pydantic v2 de entrada y salida
 │       ├── audit/             # Registro append-only fail-safe
@@ -175,169 +175,153 @@ Toda la documentación técnica formal se encuentra versionada dentro de la carp
 
 ## 📡 Contrato de la API de Evaluación Oficial
 
-El servicio expone una interfaz ASGI estándar sobre el puerto 8000 para interactuar con la plataforma de evaluación del evento.
+El servicio expone una aplicación ASGI (FastAPI + Uvicorn) en el puerto `8000` (configurable con `PORT`).
 
-Todas las peticiones exigen el encabezado de autenticación Bearer:
+Todas las rutas de la API exigen autenticación Bearer:
 ```http
 Authorization: Bearer <EVALUATION_BEARER_TOKEN>
 ```
 
-### Endpoints
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/health` | `200` si el servicio está listo (token y modelo configurados); `503` si no. |
+| `POST` | `/tasks` | Admite la tarea en menos de 2 s y devuelve su `task_id`. La ejecución continúa en un subproceso supervisado. |
+| `GET` | `/tasks/{task_id}` | Estado público de la tarea. |
+| `GET` | `/` | Consola web (pública, sin datos; el token se introduce en el navegador). |
 
-#### 1. `GET /health`
-Comprueba que el agente está activo y configurado.
-- **Respuesta 200 OK:**
-  ```json
-  {"status": "ok", "provider": "openrouter", "worker_mode": "subprocess"}
-  ```
+#### `GET /health`
+```json
+{"status": "healthy", "service": "web-agent", "ready": true, "model_configured": true,
+ "running_tasks": 0, "active_tasks": 0, "max_concurrent_tasks": 2}
+```
 
-#### 2. `POST /tasks`
-Encola una nueva tarea de evaluación y responde asíncronamente en menos de 2 segundos.
-- **Cuerpo de la Petición:**
-  ```json
-  {
-    "task": "Navegar a la pantalla de clientes, ingresar usuario 'operador' y exportar informe.",
-    "desktop": {
-      "url": "http://192.168.1.50:8080/vnc",
-      "password": "secreto_del_escritorio"
-    }
-  }
-  ```
-- **Respuesta 200 OK / 201 Created:**
-  ```json
-  {
-    "task_id": "c0a80132-7f2a-4a61-9f93-b6c8a7f10123"
-  }
-  ```
+#### `POST /tasks`
+Cuerpo del evaluador del reto (también se aceptan `task`/`desktop`):
+```json
+{"tarea": "Registra al cliente Papelería Los Andes, NIT 901234567, teléfono 3157654321, ciudad Pereira.",
+ "escritorio": {"url": "wss://<escritorio>/websockify", "password": "<contraseña>"}}
+```
+Un escritorio `wss://host/websockify` se opera a través del visor noVNC servido en la raíz del mismo
+origen; el agente lo conecta e introduce la contraseña en el visor (nunca en la URL).
+Respuesta `200`:
+```json
+{"task_id": "task_2b2ea7a108614091837e"}
+```
 
-#### 3. `GET /tasks/{task_id}`
-Consulta el estado de avance o finalización de una tarea.
-- **Respuesta 200 OK:**
-  ```json
-  {
-    "task_id": "c0a80132-7f2a-4a61-9f93-b6c8a7f10123",
-    "status": "terminada",
-    "steps": 14,
-    "summary": "Navegación completada con éxito. Archivo exportado y verificado en pantalla."
-  }
-  ```
-  *Valores posibles de `status`: `en_curso`, `terminada`, `fallida`.*
+#### `GET /tasks/{task_id}`
+```json
+{"estado": "terminada", "resumen": "respuesta: 45\nObjetivo completado y verificado (visual_interpreted). …",
+ "task_id": "task_2b2ea7a108614091837e", "status": "terminada", "steps_executed": 14, "elapsed_seconds": 41.2,
+ "estado_interno": "succeeded_verified", "verificacion": "verificado", "posibles_efectos_sin_confirmar": false}
+```
+`estado` toma uno de: `en_curso`, `terminada`, `fallida` (`status` es un alias). En una pregunta, la
+primera línea del resumen es `respuesta: <valor>`; una tarea imposible o ambigua se reporta `fallida`
+nombrando los datos que lo explican. Ninguna respuesta incluye la contraseña ni otros secretos.
 
 ---
 
 ## 🚀 Guía de Inicio Rápido
 
 ### Requisitos Previos
-- **Python >= 3.12**
-- Gestor de dependencias **[uv](https://docs.astral.sh/uv/)**
+- **Python ≥ 3.12** y **[uv](https://docs.astral.sh/uv/)**, o bien **Docker**.
 
-### 1. Clonar e Instalar Dependencias
+### 1. Instalar dependencias y Chromium
 ```bash
 git clone https://github.com/Pirrijean/web-agent.git
 cd web-agent
 uv sync
-```
-
-### 2. Instalar Navegador Chromium para Playwright
-```bash
 uv run playwright install chromium
 ```
 
-### 3. Configurar Variables de Entorno
-Copia la plantilla `.env.example` y edita tus credenciales:
+### 2. Configurar variables de entorno
 ```bash
 cp .env.example .env
 ```
-Asegúrate de configurar:
-- `EVALUATION_BEARER_TOKEN`: Token asignado para la evaluación.
-- `OPENROUTER_API_KEY`: Tu clave de API para el modelo de visión.
+Como mínimo: `EVALUATION_BEARER_TOKEN` y `OPENROUTER_API_KEY`. Para probar la interfaz sin modelo real usa `WEB_AGENT_MODEL_PROVIDER=scripted` (proveedor simulado, solo para pruebas).
 
-### 4. Diagnóstico del Entorno (`doctor`)
-Valida que el sistema, las dependencias y Chromium estén correctamente operativos:
-```bash
-uv run python main.py doctor
-```
-O verifica el estado del entrypoint de evaluación:
-```bash
-uv run python -m web_agent.entrypoint --health
-```
-
----
-
-## 💻 Ejecución por Línea de Comandos (CLI)
-
-### Levantar el Servidor de Evaluación
+### 3. Levantar el servicio y la consola
 ```bash
 uv run python main.py serve
 ```
-El servidor quedará a la escucha en `http://0.0.0.0:8000`.
+Abre **http://localhost:8000**, pulsa **Acceso**, introduce el token y envía una tarea. La consola muestra el estado del servicio y el avance de cada tarea; el token vive solo en la pestaña (`sessionStorage`).
 
-### Ejecutar una Tarea Directamente
+Diagnóstico sin lanzar navegador ni consumir inferencia:
 ```bash
-uv run python main.py run \
-  --desktop-url "http://192.168.1.50:8080" \
-  --objective "Abrir formulario de facturación e ingresar número de control"
+uv run python main.py doctor
+uv run python -m web_agent.entrypoint --health
 ```
 
-### Inspeccionar un Perfil Declarativo YAML
+### Otros comandos
 ```bash
+uv run python main.py run --desktop-url "https://escritorio.ejemplo/vnc.html" --objective "Abrir el bloc de notas"
 uv run python main.py inspect-profile profiles/examples/portal_demo.yaml
 ```
 
 ---
 
-## 🧪 Pruebas Automatizadas y Calidad
+## 🧭 Motor tri-nivel
 
-El repositorio cuenta con una batería completa de **102 pruebas automatizadas** que cubren el 100% de los componentes críticos:
+El bucle combina tres niveles que comparten validación, política R0–R3, ejecutor y auditoría
+(detalle y mediciones en [`ADR-012`](./Diseño/decisiones/ADR-012-motor-tri-nivel.md)):
+
+- **Nivel 3 (local, sin inferencia):** si el objetivo pide pulsar un texto literal (`haz clic en 'Clientes'`),
+  OCR dirigido lo localiza y se hace clic solo si es R0, no ambiguo y sin términos peligrosos a ≤ 80 px.
+  Requiere el extra `ocr` (`uv sync --extra ocr`; incluido en la imagen Docker).
+- **Nivel 2 (macro-acciones):** el modelo puede devolver hasta 5 pasos sobre la misma pantalla
+  (p.ej. rellenar un formulario); tras el primero solo se admiten pasos ≤ R1 y la ráfaga se corta si la
+  pantalla cambia de forma inesperada.
+- **Nivel 1 (clásico):** una acción por turno; es el fallback de todo.
+
+Adaptaciones al escritorio del reto: clic sostenido 150 ms (los de < 100 ms se ignoran), espera de
+repintado tras cada acción (hasta 1,5 s) y selección del contenido antes de escribir en un campo.
+
+## 🧪 Pruebas Automatizadas y Calidad
 
 ```bash
 uv run pytest
+uv run ruff check src tests --select E9,F,B --ignore B008,B904,E402
 ```
-
-```
-collected 102 items
-
-tests/integration/test_api_contract.py ................                  [ 15%]
-tests/scenarios/test_synthetic_canvas.py ..                              [ 17%]
-tests/security/test_network_secrets_budget.py ...............            [ 32%]
-tests/unit/test_geometry_and_contracts.py .....................          [ 52%]
-tests/unit/test_openrouter_adapter.py ...                                [ 55%]
-tests/unit/test_runner_visual.py ...............                         [ 70%]
-tests/unit/test_validation_and_policy.py ..............................  [100%]
-
-============================ 102 passed ============================
-```
-
-### Verificación de Estilo y Linters
+### Pruebas de práctica del reto contra el escritorio real
 ```bash
-uv run ruff check --select E9,F,B
+# credenciales en .env.pruebas (ignorado por git):
+#   DESKTOP_BASE_URL, DESKTOP_PASSWORD, DESKTOP_ADMIN_TOKEN, TEAM_TOKEN
+uv run python main.py serve                       # con OPENROUTER_API_KEY configurada
+uv run python scripts/run_pruebas.py              # E1–E5: /__reset → tarea → sondeo 5 s → /__check
+uv run python scripts/run_pruebas.py --only E3 --agent-url https://<agente-desplegado>
 ```
+Puntúa como el evaluador: cambios en la app (`/__check`), `estado`, línea `respuesta:`, datos clave en
+las tareas fallidas y ausencia de secretos. Informe en `data/pruebas/report.json`.
+
+La suite cubre contrato REST, consola, supervisor y deadline, validación contextual, política R0–R3, red/WebSockets, redacción de secretos, presupuestos y escenarios con Chromium real. La integración continua (`.github/workflows/ci.yml`) ejecuta pruebas, linter y construcción de la imagen en cada PR.
 
 ---
 
 ## 🐳 Despliegue Contenerizado con Docker
 
-Para desplegar el agente en un contenedor listo para recibir las peticiones del evaluador:
+La imagen incluye la API, la consola y Chromium; se ejecuta como usuario sin privilegios (`uid 10001`).
 
-### 1. Construir la Imagen
 ```bash
-docker build -t web-agent:latest .
+docker build -t web-agent .
+docker run -d --name web-agent -p 8000:8000 \
+  --cap-drop=ALL --security-opt no-new-privileges --shm-size=512m --memory=2g \
+  -e EVALUATION_BEARER_TOKEN="token_de_evaluacion" \
+  -e OPENROUTER_API_KEY="sk-or-..." \
+  web-agent
+curl -H "Authorization: Bearer token_de_evaluacion" http://localhost:8000/health
 ```
 
-### 2. Ejecutar el Contenedor
-```bash
-docker run -d \
-  --name web-agent \
-  -p 8000:8000 \
-  -e EVALUATION_BEARER_TOKEN="tu_bearer_token" \
-  -e OPENROUTER_API_KEY="tu_openrouter_key" \
-  web-agent:latest
-```
+- **Sandbox de Chromium:** dentro del contenedor se desactiva (`WEB_AGENT_CHROMIUM_SANDBOX=false`) porque el aislamiento lo da el propio contenedor (usuario sin privilegios, sin capacidades). Fuera de un contenedor déjalo en `true`.
+- **Memoria:** reserva al menos 1 GB por tarea concurrente (`MAX_CONCURRENT_TASKS`) y `--shm-size` ≥ 256 MB.
+- **Auditoría:** se escribe en `/app/data`; monta un volumen ahí si necesitas conservarla.
 
-### 3. Verificar Salud del Servicio
-```bash
-curl -i -H "Authorization: Bearer tu_bearer_token" http://localhost:8000/health
-```
+### Despliegue en una plataforma de contenedores
+El flujo recomendado es **GitHub → plataforma de contenedores** (Render, Railway, Fly.io o Google Cloud Run):
+1. Conecta el repositorio en la plataforma y elige *Docker* como entorno (usa el `Dockerfile` de la raíz).
+2. Define las variables secretas `EVALUATION_BEARER_TOKEN` y `OPENROUTER_API_KEY` en el panel (nunca en el repositorio).
+3. Puerto `8000` (o el que asigne la plataforma en `PORT`; el servicio lo respeta). Instancia con ≥ 2 GB de RAM.
+4. Cada merge a `main` despliega automáticamente. La sonda de salud puede usar `GET /` (pública).
+
+Vercel no es adecuado para este servicio (funciones sin estado y de corta duración, sin Chromium); puede alojar únicamente contenido estático.
 
 ---
 

@@ -1,13 +1,20 @@
+# Solo entra en la imagen lo que se copia explícitamente en el Dockerfile.
 .git
+.github
 .venv
-__pycache__
-*.pyc
+**/__pycache__
+**/*.py[oc]
 .pytest_cache
 .ruff_cache
+tests/
+Diseño/
 data/
 evidencia/
 traces/
 screenshots/
+
+# Secretos: nunca dentro de la imagen
 .env
 .env.*
-!profiles/
+*.pem
+*.key
