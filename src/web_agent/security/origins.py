@@ -99,8 +99,9 @@ def _normalize_host(raw_host: str) -> str:
         raise OriginError("host vacío")
     if "*" in host:
         raise OriginError("no se admiten comodines en el host")
-    if _ip_or_none(host) is not None:
-        return host
+    ip = _ip_or_none(host)
+    if ip is not None:
+        return str(ip)
     try:
         ascii_host = host.encode("idna").decode("ascii").lower()
     except UnicodeError as exc:
@@ -119,7 +120,10 @@ def parse_url_origin(url: str) -> Origin:
         raise OriginError("URL demasiado larga")
     if _FORBIDDEN_CHARS.search(url):
         raise OriginError("URL con espacios, barras invertidas o caracteres de control")
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError as exc:
+        raise OriginError("URL malformada") from exc
     scheme = parts.scheme.lower()
     if scheme not in ALLOWED_SCHEMES:
         raise OriginError(f"esquema no permitido: {scheme or '(ninguno)'}")

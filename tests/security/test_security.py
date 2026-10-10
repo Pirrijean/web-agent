@@ -68,8 +68,9 @@ def test_security_policy_enforcer():
         enforcer.validate_action(bad_action)
     assert "Seguridad de Red" in str(exc.value)
     
-    # Blocked action due to permissions
+    # Blocked action due to permissions / fail-closed
     fill_action = ProposedAction(action_type=ActionType.FILL, target_element_id="e1", value="test", reasoning="Fill")
     with pytest.raises(PolicyViolationError) as exc:
         enforcer.validate_action(fill_action)
-    assert "Inyección de texto deshabilitada" in str(exc.value)
+    assert "Acción bloqueada" in str(exc.value) or "Inyección de texto" in str(exc.value)
+

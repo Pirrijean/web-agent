@@ -10,12 +10,7 @@ class NetworkPolicyValidator:
         
         # Pre-parse allowed origins for fast lookup
         for origin_str in self.profile.allowed_origins:
-            try:
-                self.allowed_origins.add(parse_url_origin(origin_str))
-            except OriginError:
-                # Silently ignore bad origins in profile during init, 
-                # though ideally the schema validates them.
-                pass
+            self.allowed_origins.add(parse_url_origin(origin_str))
 
     def is_url_allowed(self, target_url: str) -> bool:
         """Verifica si la URL destino es segura y pertenece a la lista blanca de orígenes."""
@@ -28,12 +23,6 @@ class NetworkPolicyValidator:
             return False
             
         if not self.allowed_origins:
-            # If no allowed origins specified, allow any non-private?
-            # Or default deny? The schema probably requires it.
-            # Let's say if it's not restricted, we return True, but typically it should be checked.
-            # Usually security profiles have allowed_origins.
-            # I will assume default deny if allowed_origins is not empty, but if it is empty... wait.
-            # Let's check schemas.py to see if it defaults to empty.
-            pass
+            return False
 
         return target_origin in self.allowed_origins

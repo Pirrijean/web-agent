@@ -8,3 +8,29 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Secretos y estado autenticado
+.env
+.env.*
+!.env.example
+secrets/
+auth/
+playwright/.auth/
+*storage_state*.json
+*.pem
+*.key
+
+# Datos locales y evidencia sensible
+data/
+evidencia/
+traces/
+screenshots/
+*.db
+*.db-wal
+*.db-shm
+
+# Herramientas
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
