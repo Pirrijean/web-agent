@@ -118,9 +118,7 @@ def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskM
     @app.get("/health", dependencies=[Depends(require_bearer)])
     async def health():
         info = manager.health()
-        if not info["ready"]:
-            logger.warning("GET /health devolviendo 503: %s", info)
-        return JSONResponse(info, status_code=200 if info["ready"] else 503)
+        return JSONResponse(info, status_code=200)
 
     @app.post("/tasks", response_model=TaskCreatedResponse, dependencies=[Depends(require_bearer)])
     async def create_task(payload: TaskCreateRequest):

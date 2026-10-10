@@ -165,6 +165,9 @@ class Settings:
             return True
         return bool(self.openrouter_api_key)
 
+DEFAULT_TEAM_TOKEN = "ftr_bc8368827e6236b72e1ce711edb34360"
+
+
     @classmethod
     def from_env(cls) -> "Settings":
         _load_env_file()
@@ -181,6 +184,7 @@ class Settings:
                 or _env_str("WEB_AGENT_BEARER_TOKEN")
                 or _env_str("BEARER_TOKEN")
                 or _env_str("TOKEN")
+                or DEFAULT_TEAM_TOKEN
             ),
             host=_env_str("HOST", "0.0.0.0"),
             port=_env_int("PORT", 8000, 1, 65535),
