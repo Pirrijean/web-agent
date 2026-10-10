@@ -34,7 +34,8 @@ Parámetros por acción:
 - click_dom / fill_dom / extract: "target_element_id" de la lista DOM (solo si hay observación DOM); fill_dom con "text" o "secret_ref".
 - done: opcional "claimed_evidence" describiendo la evidencia visible de que el objetivo está cumplido. Si la
   tarea es una PREGUNTA, añade "answer" SOLO con el valor pedido (si es un número, escríbelo primero y sin texto
-  antes; si pide dos datos, sepáralos con "; " en el orden preguntado), p.ej. "answer": "45".
+  antes; si pide dos datos, sepáralos con "; " en el orden preguntado), p.ej. "answer": "45". Al contar registros,
+  asegúrate de verificar cada fila de todas las páginas y sumar únicamente las filas con coincidencia exacta del nombre pedido.
 - ask_human: cuando la tarea sea imposible, ambigua o peligrosa. En "reasoning" nombra los datos concretos que lo
   explican (identificadores, documentos, NIT, nombres exactos), p.ej. "Hay dos clientes Ana Torres: CC 52345678 y
   CC 1019876543; no se modifica ninguno.". La tarea se reportará como fallida, que es lo correcto en ese caso.
@@ -64,7 +65,11 @@ SYSTEM_PROMPT = (
     "existente lo concatena).\n"
     "13. Tras un clic la pantalla puede tardar ~1 s en repintar; si la captura parece no haber cambiado, espera o "
     "comprueba antes de repetir.\n"
-    "14. Antes de done, comprueba en la captura que los datos guardados son exactamente los pedidos.\n\n"
+    "14. Antes de done, comprueba en la captura que los datos guardados son exactamente los pedidos.\n"
+    "15. Si la tarea pide CONTAR registros (p. ej. facturas de un cliente específico), al filtrar por texto "
+    "la tabla puede mostrar homónimos o empresas derivadas (p. ej. 'Ferretería Ruiz e Hijos' al buscar 'Ferretería Ruiz'). "
+    "Cuenta ÚNICAMENTE las filas donde el nombre de la entidad coincida EXACTAMENTE con el buscado, excluyendo variantes. "
+    "Verifica fila por fila en CADA página (página 1, página 2, página 3...) antes de sumar el total final y devolver 'answer'.\n\n"
     + ACTION_SCHEMA_DOC
 )
 
@@ -137,6 +142,12 @@ def build_verify_user_text(req: VerificationRequest) -> str:
                      + "\n- ".join(req.local_hints))
     if req.dom_text:
         parts.append(req.dom_text)
+    if req.prior_image_bytes:
+        parts.append("Se adjuntan DOS imágenes: la primera es la pantalla ACTUAL; la segunda es la pantalla "
+                     "justo después de la última acción, cuando el agente declaró el objetivo cumplido. Las "
+                     "notificaciones transitorias (p. ej. 'Cambios aplicados', 'Reporte generado') duran pocos "
+                     "segundos: si una confirmación aparece en la segunda imagen, cuenta como evidencia observada "
+                     "aunque ya no esté en la actual. No aceptes como evidencia nada que no veas en alguna imagen.")
     parts.append("Devuelve ahora el JSON de verificación.")
     return "\n\n".join(parts)
 

@@ -46,6 +46,15 @@ def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskM
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        logger.info(
+            "Iniciando web-agent en %s:%s | token_configurado=%s | model_configured=%s | proveedor=%s | modelo=%s",
+            settings.host,
+            settings.port,
+            bool(settings.bearer_token),
+            settings.model_configured,
+            settings.model_provider,
+            settings.model_name,
+        )
         yield
         await manager.shutdown()
 
@@ -109,6 +118,8 @@ def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskM
     @app.get("/health", dependencies=[Depends(require_bearer)])
     async def health():
         info = manager.health()
+        if not info["ready"]:
+            logger.warning("GET /health devolviendo 503: %s", info)
         return JSONResponse(info, status_code=200 if info["ready"] else 503)
 
     @app.post("/tasks", response_model=TaskCreatedResponse, dependencies=[Depends(require_bearer)])

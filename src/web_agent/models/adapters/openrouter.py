@@ -107,6 +107,9 @@ class OpenRouterModelAdapter(BaseModelAdapter):
             "temperature": 0.0,
             "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
+            # Los modelos Gemini 3.x razonan por defecto y ese razonamiento consume max_tokens,
+            # truncando el JSON. Esfuerzo mínimo: respuesta completa y ~2-3 s por paso.
+            "reasoning": {"effort": "minimal"},
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": content},
@@ -194,4 +197,6 @@ class OpenRouterModelAdapter(BaseModelAdapter):
             request.observation_meta,
             request.max_output_tokens,
             request.timeout_seconds,
+            ((request.prior_image_bytes, request.prior_image_mime or "image/png"),)
+            if request.prior_image_bytes else (),
         )

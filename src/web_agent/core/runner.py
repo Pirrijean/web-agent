@@ -839,7 +839,10 @@ class AgentRunner:
         state.mark_stale()
         self._last_snapshot = None
         if action.action in VISUAL_ACTIONS:
-            self._last_snapshot = await self._settle(reference)
+            # Tras guardar/aplicar (R2) el repintado puede llegar >1 s después: con una espera corta
+            # el modelo veía el formulario sin guardar y volvía a pulsar (registro duplicado).
+            min_wait = self.settings.persist_settle_seconds if persistent else 0.0
+            self._last_snapshot = await self._settle(reference, min_wait=min_wait)
         state.history.append(StepRecord(index=state.steps_executed, action=action.action.value, summary=summary,
                                         outcome=outcome.detail, risk=decision.risk.value, coords=coords))
         if outcome.extracted:
@@ -889,14 +892,17 @@ class AgentRunner:
         return await asyncio.wait_for(
             page.screenshot(type="png", full_page=False, scale="css", timeout=timeout * 1000), timeout=timeout)
 
-    async def _settle(self, reference: Optional[bytes]) -> Optional[bytes]:
+    async def _settle(self, reference: Optional[bytes], min_wait: float = 0.0) -> Optional[bytes]:
         """Espera el repintado tras una acción: primero a que la pantalla cambie (hasta
-        ``settle_max_seconds``) y después a que se mantenga estable. Devuelve la última captura."""
+        ``settle_max_seconds``) y después a que se mantenga estable. Devuelve la última captura.
+        ``min_wait``: tiempo mínimo antes de devolver (acciones persistentes con repintado tardío)."""
         max_wait = self.settings.settle_max_seconds
         if max_wait <= 0 or reference is None:
             return None
         loop = asyncio.get_running_loop()
         start = loop.time()
+        min_wait = max(0.0, min(min_wait, self._ctx.deadline.remaining() - 5.0))
+        max_wait = max(max_wait, min_wait)
         hard_end = start + min(max_wait + 1.5, max(0.0, self._ctx.deadline.remaining() - 3.0))
         stable_for = self.settings.settle_stable_seconds
         last: Optional[bytes] = None
@@ -916,7 +922,7 @@ class AgentRunner:
                 elif now - start >= max_wait:
                     return snap  # sin efecto visible: se informa al modelo como «pantalla SIN cambios»
             elif change_map(last, snap).unchanged:
-                if now - changed_at >= stable_for:
+                if now - changed_at >= stable_for and now - start >= min_wait:
                     return snap
             else:
                 last, changed_at = snap, now
@@ -1109,6 +1115,7 @@ class AgentRunner:
                 raise BudgetExhaustedError("Máximo de llamadas al modelo alcanzado.")
             # Mitigación 2: en escritorios remotos no hay respuestas HTTP que verificar; se exige
             # un lienzo estable y se aportan lecturas OCR como señal NO concluyente.
+            done_image = state.current_image  # puede contener un toast de confirmación transitorio
             if await self._wait_canvas_stable():
                 await self._observe()
             hints = await self._ocr_hints()
@@ -1123,6 +1130,7 @@ class AgentRunner:
                     timeout=timeout,
                     max_output_tokens=min(512, self.settings.max_output_tokens),
                     local_hints=hints,
+                    prior_image=done_image,
                 )
             except (TimeoutError, asyncio.TimeoutError, ModelProviderError, ModelOutputError):
                 if ctx.deadline.remaining() <= 1.0:
