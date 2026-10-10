@@ -43,7 +43,13 @@ SECRET_REF = re.compile(r"^\{\{secret:([A-Z][A-Z0-9_]{0,63})\}\}$")
 
 
 class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=False)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=False,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -180,17 +186,17 @@ class PageObservation(_Strict):
 # ---------------------------------------------------------------------------
 class BrowserConfig(_Strict):
     engine: Literal["chromium"] = "chromium"
-    headless: bool = True
-    chromium_sandbox: bool = True
+    headless: bool = Field(True, strict=True)
+    chromium_sandbox: bool = Field(True, strict=True)
 
 
 class PermissionsConfig(_Strict):
     # Mínimo privilegio: solo lectura por defecto.
-    navigation: bool = True
-    read_visible_data: bool = True
-    fill_forms: bool = False
-    submit_forms: bool = False
-    delete_records: bool = False
+    navigation: bool = Field(True, strict=True)
+    read_visible_data: bool = Field(True, strict=True)
+    fill_forms: bool = Field(False, strict=True)
+    submit_forms: bool = Field(False, strict=True)
+    delete_records: bool = Field(False, strict=True)
 
 
 class SecurityProfile(_Strict):
@@ -228,11 +234,11 @@ class SecurityProfile(_Strict):
 
 
 class ExecutionConfig(_Strict):
-    max_steps: int = Field(40, ge=1, le=HARD_MAX_STEPS)
-    max_retries_per_action: int = Field(2, ge=0, le=HARD_MAX_RETRIES)
-    task_timeout_seconds: int = Field(300, ge=1, le=HARD_MAX_TASK_TIMEOUT_S)
-    action_timeout_ms: int = Field(5_000, ge=100, le=HARD_MAX_ACTION_TIMEOUT_MS)
-    model_timeout_seconds: int = Field(60, ge=1, le=HARD_MAX_MODEL_TIMEOUT_S)
+    max_steps: int = Field(40, ge=1, le=HARD_MAX_STEPS, strict=True)
+    max_retries_per_action: int = Field(2, ge=0, le=HARD_MAX_RETRIES, strict=True)
+    task_timeout_seconds: int = Field(300, ge=1, le=HARD_MAX_TASK_TIMEOUT_S, strict=True)
+    action_timeout_ms: int = Field(5_000, ge=100, le=HARD_MAX_ACTION_TIMEOUT_MS, strict=True)
+    model_timeout_seconds: int = Field(60, ge=1, le=HARD_MAX_MODEL_TIMEOUT_S, strict=True)
 
 
 class SuccessCondition(_Strict):
@@ -303,8 +309,11 @@ class RunResult(_Strict):
 
 def load_profile(path: str | Path) -> TaskProfile:
     """Carga y valida un perfil YAML (``yaml.safe_load``, tamaño limitado, raíz ``profile``)."""
-    p = Path(path)
-    data = p.read_bytes()
+    p = Path(path).resolve()
+    if not p.is_file():
+        raise FileNotFoundError(f"Perfil no encontrado: {p}")
+    with p.open("rb") as handle:
+        data = handle.read(MAX_PROFILE_BYTES + 1)
     if len(data) > MAX_PROFILE_BYTES:
         raise ValueError("perfil demasiado grande")
     doc = yaml.safe_load(data.decode("utf-8"))

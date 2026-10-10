@@ -1,340 +1,370 @@
 import asyncio
-import logging
 import uuid
+from dataclasses import dataclass
 from typing import Optional
 
 from pydantic import ValidationError
 
 from web_agent.audit.events import AuditEvent, AuditLogger
-from web_agent.browser.observe import DOMObserver
-from web_agent.browser.session import SecureBrowserSession
 from web_agent.core.errors import (
     ActionNotVerifiedError,
     AuditUnavailableError,
+    ModelOutputError,
     PolicyViolationError,
 )
 from web_agent.core.policy import SecurityPolicyEnforcer
 from web_agent.core.schemas import (
+    MAX_OBJECTIVE_CHARS,
     ActionType,
     FinalState,
     PageObservation,
     ProposedAction,
-    RunRequest,
     RunResult,
     TaskProfile,
 )
-from web_agent.models.base import BaseModelAdapter
-from web_agent.recovery.strategies import FailureType, RecoveryStrategy
 from web_agent.security.redaction import DataRedactor
 
-logger = logging.getLogger(__name__)
+
+@dataclass
+class _Progress:
+    actions_attempted: int = 0
+    policy_blocks: int = 0
 
 
 class AgentRunner:
-    """Planificador que orquesta el bucle estricto: Observar -> Validar -> Ejecutar -> Verificar (Fase 3)."""
-
-    def __init__(
-        self,
-        profile: TaskProfile,
-        model: BaseModelAdapter,
-        browser: SecureBrowserSession,
-        audit_logger: Optional[AuditLogger] = None,
-    ):
-        self.profile = profile
+    def __init__(self, profile: TaskProfile, model, browser, audit_logger=None):
+        # Reconstruir: no confiar en una instancia creada con model_construct().
+        self.profile = TaskProfile.model_validate(
+            profile.model_dump(mode="json")
+        )
         self.model = model
         self.browser = browser
-        self.policy_enforcer = SecurityPolicyEnforcer(profile)
+        self.audit_logger = (
+            audit_logger if audit_logger is not None else AuditLogger()
+        )
+        self.policy_enforcer = SecurityPolicyEnforcer(self.profile)
 
-        # WA-04: Conectar la política de red obligatoria antes de iniciar la sesión
-        self.browser.network_validator = self.policy_enforcer.network_validator
+        self.browser.network_validator = (
+            self.policy_enforcer.network_validator
+        )
+        self.browser.headless = self.profile.browser.headless
+        self.browser.chromium_sandbox = (
+            self.profile.browser.chromium_sandbox
+        )
 
-        # WA-07: Conectar registrador de auditoría
-        self.audit_logger = audit_logger or AuditLogger()
+        self._running = False
 
-    async def run(self, objective: str) -> RunResult:
-        run_id = f"run_{uuid.uuid4().hex[:16]}"
-        try:
-            # WEB-02: Validar el objetivo antes de abrir recursos
-            request = RunRequest(objective=objective)
-            validated_objective = request.objective
-        except Exception as exc:
-            safe_err = DataRedactor.redact(f"Solicitud rechazada: {exc}")
-            logger.error(safe_err)
-            return RunResult(
-                run_id=run_id,
-                final_state=FinalState.BLOCKED,
-                steps_executed=0,
-                reason="Objetivo no válido según el contrato de la plataforma.",
-            )
-
-        try:
-            return await asyncio.wait_for(
-                self._run_loop(run_id, validated_objective),
-                timeout=self.profile.execution.task_timeout_seconds,
-            )
-        except asyncio.TimeoutError:
-            safe_err = DataRedactor.redact("Global task timeout exceeded.")
-            logger.error(safe_err)
-            return RunResult(
-                run_id=run_id,
-                final_state=FinalState.FAILED,
-                steps_executed=0,
-                reason="Límite de tiempo global de la tarea superado.",
-            )
-
-    async def _run_loop(self, run_id: str, objective: str) -> RunResult:
-        steps_executed = 0
-        try:
-            # WEB-03: Inicio dentro del ámbito de limpieza
-            await self.browser.start()
-
-            for step in range(self.profile.execution.max_steps):
-                steps_executed += 1
-
-                # 1. Observar
-                page_state, current_obs_id = await self._get_page_state()
-
-                # 2. Proponer (El LLM delibera sin tocar el DOM)
-                try:
-                    candidate = await asyncio.wait_for(
-                        self.model.propose_action(objective, page_state),
-                        timeout=self.profile.execution.model_timeout_seconds,
-                    )
-                except asyncio.TimeoutError:
-                    logger.error("Tiempo límite del modelo agotado.")
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.FAILED,
-                        steps_executed=steps_executed,
-                        reason="El modelo no respondió dentro del tiempo límite.",
-                    )
-                except Exception as exc:
-                    safe_msg = DataRedactor.redact(f"Fallo del modelo: {exc}")
-                    logger.error(safe_msg)
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.FAILED,
-                        steps_executed=steps_executed,
-                        reason="Error irrecuperable al consultar el modelo.",
-                    )
-
-                # WEB-02: Revalidar inmediatamente la propuesta en la frontera
-                if not isinstance(candidate, ProposedAction):
-                    logger.error("Contrato de salida del modelo inválido.")
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.FAILED,
-                        steps_executed=steps_executed,
-                        reason="El modelo devolvió un objeto incompatible.",
-                    )
-
-                try:
-                    action = ProposedAction.model_validate(candidate.model_dump())
-                except ValidationError:
-                    logger.error("La propuesta del modelo no respeta el esquema de acción.")
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.BLOCKED,
-                        steps_executed=steps_executed,
-                        reason="Acción rechazada por validación de esquema.",
-                    )
-
-                # Validar que la acción corresponda a la observación activa
-                if action.observation_id and current_obs_id and action.observation_id != current_obs_id:
-                    safe_err = "Acción referenciando una observación obsoleta o manipulada."
-                    logger.error(safe_err)
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.BLOCKED,
-                        steps_executed=steps_executed,
-                        reason=safe_err,
-                        blocked_requests=1,
-                    )
-
-                # WEB-02: Validar con política de seguridad ANTES de logging y de procesar DONE / ASK_HUMAN
-                try:
-                    self.policy_enforcer.validate_action(action)
-                except PolicyViolationError as exc:
-                    safe_reason = DataRedactor.redact(str(exc))
-                    logger.error("Acción bloqueada por política: %s", safe_reason)
-                    await self._audit(
-                        run_id=run_id,
-                        action_type=action.action_type.value,
-                        details=safe_reason,
-                        is_success=False,
-                        blocked=True,
-                    )
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.BLOCKED,
-                        steps_executed=steps_executed,
-                        reason=safe_reason,
-                        blocked_requests=1,
-                    )
-
-                logger.info("Paso %d | Acción autorizada: %s", step, action.action_type.value)
-
-                # WA-03: Manejo estricto de DONE
-                if action.action_type == ActionType.DONE:
-                    verified = await self._verify_success()
-                    final_state = (
-                        FinalState.SUCCEEDED_VERIFIED
-                        if verified
-                        else FinalState.NEEDS_HUMAN_REVIEW
-                    )
-                    await self._audit(
-                        run_id=run_id,
-                        action_type=action.action_type.value,
-                        details=f"DONE propuesto. Verificado={verified}",
-                        is_success=verified,
-                        blocked=False,
-                    )
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=final_state,
-                        steps_executed=steps_executed,
-                        reason=(
-                            "Objetivo verificado exitosamente."
-                            if verified
-                            else "El modelo propuso DONE pero la condición de éxito no pudo verificarse."
-                        ),
-                    )
-
-                if action.action_type == ActionType.ASK_HUMAN:
-                    await self._audit(
-                        run_id=run_id,
-                        action_type=action.action_type.value,
-                        details="Intervención humana solicitada.",
-                        is_success=True,
-                        blocked=False,
-                    )
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.NEEDS_HUMAN_REVIEW,
-                        steps_executed=steps_executed,
-                        reason="El agente solicitó confirmación humana.",
-                    )
-
-                # WEB-04: Registrar intención autorizada ANTES de ejecutar
-                await self._audit(
-                    run_id=run_id,
-                    action_type=action.action_type.value,
-                    details="Intención autorizada antes de ejecutar",
-                    is_success=True,
-                    blocked=False,
-                )
-
-                # 4. Ejecutar con política de reintentos
-                success = False
-                last_error: Optional[Exception] = None
-
-                for attempt in range(self.profile.execution.max_retries_per_action + 1):
-                    try:
-                        await asyncio.wait_for(
-                            self._execute_action(action),
-                            timeout=self.profile.execution.action_timeout_ms / 1000.0,
-                        )
-                        success = True
-                        break
-                    except PolicyViolationError as exc:
-                        last_error = exc
-                        safe_reason = DataRedactor.redact(str(exc))
-                        logger.error("Violación de política durante ejecución: %s", safe_reason)
-                        await self._audit(
-                            run_id=run_id,
-                            action_type=action.action_type.value,
-                            details=safe_reason,
-                            is_success=False,
-                            blocked=True,
-                        )
-                        return RunResult(
-                            run_id=run_id,
-                            final_state=FinalState.BLOCKED,
-                            steps_executed=steps_executed,
-                            reason=safe_reason,
-                            blocked_requests=1,
-                        )
-                    except Exception as exc:
-                        last_error = exc
-                        failure_type = RecoveryStrategy.classify_error(exc)
-                        if not RecoveryStrategy.can_recover(failure_type):
-                            safe_msg = DataRedactor.redact(f"Error irrecuperable: {exc}")
-                            logger.error(safe_msg)
-                            break
-                        safe_warn = DataRedactor.redact(f"Reintento {attempt} tras fallo transitorio: {exc}")
-                        logger.warning(safe_warn)
-                        await asyncio.sleep(1)
-
-                await self._audit(
-                    run_id=run_id,
-                    action_type=action.action_type.value,
-                    details="Ejecución exitosa" if success else DataRedactor.redact(str(last_error)),
-                    is_success=success,
-                    blocked=False,
-                )
-
-                if not success:
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.FAILED,
-                        steps_executed=steps_executed,
-                        reason=DataRedactor.redact(f"Fallo tras agotar reintentos: {last_error}"),
-                    )
-
-            return RunResult(
-                run_id=run_id,
-                final_state=FinalState.FAILED,
-                steps_executed=steps_executed,
-                reason="Límite máximo de pasos alcanzado sin cumplir el objetivo.",
-            )
-
-        finally:
-            await self.browser.stop()
+    def _result(
+        self,
+        run_id: str,
+        progress: _Progress,
+        state: FinalState,
+        reason: str,
+    ) -> RunResult:
+        return RunResult(
+            run_id=run_id,
+            final_state=state,
+            steps_executed=progress.actions_attempted,
+            blocked_requests=progress.policy_blocks,
+            reason=reason,
+        )
 
     async def _audit(
         self,
         run_id: str,
         action_type: str,
         details: str,
-        is_success: bool,
-        blocked: bool,
+        success: bool,
+        blocked: bool = False,
     ):
-        """WEB-04: Auditoría fail-safe. Detiene la ejecución si falla la persistencia obligatoria."""
         event = AuditEvent(
             run_id=run_id,
             action_type=action_type,
             details=DataRedactor.redact(details),
-            is_success=is_success,
+            is_success=success,
             blocked_by_policy=blocked,
         )
         try:
-            await asyncio.to_thread(self.audit_logger.log_event, event)
-        except Exception:
+            await asyncio.wait_for(
+                asyncio.to_thread(self.audit_logger.log_event, event),
+                timeout=5.0,
+            )
+        except Exception as exc:
+            # No propagar texto externo que pueda contener secretos.
             raise AuditUnavailableError(
-                "Auditoría no disponible; ejecución detenida."
-            ) from None
+                "Auditoría obligatoria no disponible."
+            ) from exc
 
-    async def _get_page_state(self) -> tuple[str, Optional[str]]:
-        """WEB-04: Extrae observación acotada y segura retornando prompt y observation_id."""
+    @staticmethod
+    def _validate_model_action(value) -> ProposedAction:
+        try:
+            if isinstance(value, ProposedAction):
+                value = value.model_dump(mode="json")
+
+            if not isinstance(value, dict):
+                raise ValueError("Tipo de propuesta no permitido.")
+
+            return ProposedAction.model_validate(value)
+        except (ValidationError, ValueError, TypeError) as exc:
+            raise ModelOutputError(
+                "La propuesta del modelo no cumple el contrato."
+            ) from exc
+
+    async def run(self, objective: str) -> RunResult:
+        if (
+            not isinstance(objective, str)
+            or not objective.strip()
+            or len(objective) > MAX_OBJECTIVE_CHARS
+            or "\x00" in objective
+        ):
+            raise ValueError("Objetivo inválido.")
+
+        if self._running:
+            raise RuntimeError(
+                "Una sesión no puede ejecutar tareas concurrentes."
+            )
+
+        self._running = True
+        run_id = f"run_{uuid.uuid4().hex}"
+        progress = _Progress()
+        result = None
+        cleanup_failed = False
+
+        try:
+            async with asyncio.timeout(
+                self.profile.execution.task_timeout_seconds
+            ):
+                await self._audit(
+                    run_id, "run_start", "Inicio autorizado.", True
+                )
+                # El inicio queda dentro del ámbito de limpieza.
+                await self.browser.start()
+                result = await self._run_loop(
+                    run_id,
+                    DataRedactor.redact(objective),
+                    progress,
+                )
+
+        except AuditUnavailableError:
+            state = (
+                FinalState.BLOCKED
+                if progress.actions_attempted == 0
+                else FinalState.NEEDS_HUMAN_REVIEW
+            )
+            result = self._result(
+                run_id,
+                progress,
+                state,
+                "Ejecución detenida: auditoría no disponible.",
+            )
+
+        except PolicyViolationError:
+            progress.policy_blocks += 1
+            result = self._result(
+                run_id,
+                progress,
+                FinalState.BLOCKED,
+                "Operación bloqueada por la política de seguridad.",
+            )
+
+        except (TimeoutError, asyncio.TimeoutError):
+            state = (
+                FinalState.FAILED
+                if progress.actions_attempted == 0
+                else FinalState.NEEDS_HUMAN_REVIEW
+            )
+            result = self._result(
+                run_id,
+                progress,
+                state,
+                "Tiempo global agotado. No se repiten operaciones.",
+            )
+
+        except Exception:
+            result = self._result(
+                run_id,
+                progress,
+                FinalState.NEEDS_HUMAN_REVIEW,
+                "Ejecución abortada por un fallo interno.",
+            )
+
+        finally:
+            try:
+                await asyncio.wait_for(self.browser.stop(), timeout=7.0)
+            except Exception:
+                cleanup_failed = True
+            finally:
+                self._running = False
+
+        if cleanup_failed:
+            result = self._result(
+                run_id,
+                progress,
+                FinalState.NEEDS_HUMAN_REVIEW,
+                "No se pudo confirmar el cierre de todos los recursos.",
+            )
+
+        try:
+            await self._audit(
+                run_id,
+                "run_end",
+                result.final_state.value,
+                result.final_state == FinalState.SUCCEEDED_VERIFIED,
+                result.final_state == FinalState.BLOCKED,
+            )
+        except AuditUnavailableError:
+            result = self._result(
+                run_id,
+                progress,
+                (
+                    FinalState.BLOCKED
+                    if progress.actions_attempted == 0
+                    else FinalState.NEEDS_HUMAN_REVIEW
+                ),
+                "No se pudo persistir el estado final.",
+            )
+
+        return result
+
+    async def _observe(self) -> str:
         if not self.profile.permissions.read_visible_data:
-            return "Observación web no autorizada por el perfil.", None
+            return PageObservation(
+                url="about:blank",
+                title="Observación deshabilitada por permisos.",
+            ).to_model_prompt()
 
         page = self.browser.page
         if page is None or page.is_closed():
-            raise ActionNotVerifiedError("No existe una página observable.")
+            raise ActionNotVerifiedError("No existe página activa.")
 
-        snapshot = await DOMObserver.capture_observation(page)
-        return DataRedactor.redact(snapshot.to_model_prompt()), snapshot.observation_id
+        if (
+            page.url != "about:blank"
+            and not self.policy_enforcer.network_validator.is_url_allowed(
+                page.url
+            )
+        ):
+            raise PolicyViolationError("Página fuera del ámbito permitido.")
 
+        title = await page.title()
+        observation = PageObservation(
+            url=DataRedactor.redact(page.url),
+            title=DataRedactor.redact(title)[:300],
+            # No inventar elementos que aún no se han observado.
+            elements=(),
+            visible_text="",
+            truncated=len(title) > 300,
+        )
+        return observation.to_model_prompt()
 
-    async def _execute_action(self, action: ProposedAction):
-        """WA-02: Rechazar operaciones no implementadas; no permitir falsos éxitos."""
+    async def _run_loop(
+        self,
+        run_id: str,
+        objective: str,
+        progress: _Progress,
+    ) -> RunResult:
+        for _ in range(self.profile.execution.max_steps):
+            page_state = await self._observe()
+
+            try:
+                proposed = await asyncio.wait_for(
+                    self.model.propose_action(objective, page_state),
+                    timeout=self.profile.execution.model_timeout_seconds,
+                )
+                action = self._validate_model_action(proposed)
+            except (TimeoutError, asyncio.TimeoutError):
+                return self._result(
+                    run_id,
+                    progress,
+                    FinalState.FAILED,
+                    "El modelo no respondió dentro del límite.",
+                )
+            except ModelOutputError:
+                return self._result(
+                    run_id,
+                    progress,
+                    FinalState.FAILED,
+                    "Salida del modelo inválida.",
+                )
+
+            # Toda acción, incluso DONE, pasa por la política.
+            self.policy_enforcer.validate_action(action)
+
+            await self._audit(
+                run_id,
+                action.action_type.value,
+                "Propuesta validada por la política.",
+                True,
+            )
+
+            if action.action_type == ActionType.ASK_HUMAN:
+                return self._result(
+                    run_id,
+                    progress,
+                    FinalState.NEEDS_HUMAN_REVIEW,
+                    "Intervención humana solicitada.",
+                )
+
+            if action.action_type == ActionType.DONE:
+                verified = await asyncio.wait_for(
+                    self._verify_success(),
+                    timeout=self.profile.execution.action_timeout_ms / 1000.0,
+                )
+                return self._result(
+                    run_id,
+                    progress,
+                    (
+                        FinalState.SUCCEEDED_VERIFIED
+                        if verified
+                        else FinalState.NEEDS_HUMAN_REVIEW
+                    ),
+                    (
+                        "Condición final verificada."
+                        if verified
+                        else "No existe evidencia suficiente de éxito."
+                    ),
+                )
+
+            progress.actions_attempted += 1
+
+            # Sin reintentos: no existe aún un contrato de repetición seguro.
+            try:
+                await asyncio.wait_for(
+                    self._execute_navigation(action),
+                    timeout=self.profile.execution.action_timeout_ms / 1000.0,
+                )
+            except PolicyViolationError:
+                raise
+            except Exception:
+                return self._result(
+                    run_id,
+                    progress,
+                    FinalState.NEEDS_HUMAN_REVIEW,
+                    "Resultado de navegación no verificable. No se repite.",
+                )
+
+            await self._audit(
+                run_id,
+                action.action_type.value,
+                "Respuesta y destino final comprobados.",
+                True,
+            )
+
+        return self._result(
+            run_id,
+            progress,
+            FinalState.FAILED,
+            "Límite de pasos alcanzado.",
+        )
+
+    async def _execute_navigation(self, action: ProposedAction):
+        self.policy_enforcer.validate_action(action)
+
         if action.action_type != ActionType.NAVIGATE:
             raise PolicyViolationError("Operación no implementada.")
 
         page = self.browser.page
         if page is None or page.is_closed():
-            raise ActionNotVerifiedError("No existe una página activa.")
+            raise ActionNotVerifiedError("No existe página activa.")
 
         response = await page.goto(
             action.url,
@@ -342,14 +372,13 @@ class AgentRunner:
             timeout=self.profile.execution.action_timeout_ms,
         )
 
-        if response is None or response.status >= 400:
-            raise ActionNotVerifiedError("Navegación sin respuesta HTTP válida.")
-
         if not self.policy_enforcer.network_validator.is_url_allowed(page.url):
             raise PolicyViolationError("Destino final no autorizado.")
 
+        if response is None or not 200 <= response.status < 400:
+            raise ActionNotVerifiedError("Respuesta HTTP no verificable.")
+
     async def _verify_success(self) -> bool:
-        """WA-03: Verificación determinista independiente contra la condición del perfil."""
         condition = self.profile.verification.success_condition
         page = self.browser.page
 

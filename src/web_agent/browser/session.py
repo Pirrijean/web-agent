@@ -70,12 +70,22 @@ class SecureBrowserSession:
         self._browser = None
         self._playwright = None
 
-        for resource, method in resources:
-            if resource is None:
-                continue
+        failed = False
+        try:
+            for resource, method in resources:
+                if resource is None:
+                    continue
+                try:
+                    await asyncio.wait_for(
+                        getattr(resource, method)(),
+                        timeout=2.0,
+                    )
+                except Exception:
+                    failed = True
+        finally:
+            pass
 
-            try:
-                async with asyncio.timeout(5):
-                    await getattr(resource, method)()
-            except Exception:
-                logger.error("No se pudo cerrar completamente un recurso del navegador.")
+        if failed:
+            raise RuntimeError(
+                "No se pudo confirmar el cierre completo de la sesión."
+            )
