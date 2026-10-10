@@ -1,107 +1,191 @@
-import asyncio
-import json
-import os
+"""Adaptador OpenRouter con entrada multimodal (documento maestro §8.7; ADR-006).
+
+Cambios respecto a la base: envía la captura por el canal multimodal
+(``image_url`` con data URI), usa un cliente HTTP compartido con timeouts,
+aplica el presupuesto de forma obligatoria y nunca recibe secretos.
+OpenRouter es un adaptador candidato, no una dependencia arquitectónica.
+"""
+
+from __future__ import annotations
+
+import base64
+import math
+import time
 from decimal import Decimal
 from typing import Optional
 
 import httpx
 
-from web_agent.core.errors import ModelOutputError
-from web_agent.core.schemas import ProposedAction
-from web_agent.execution.budgets import BudgetManager
-from web_agent.models.base import BaseModelAdapter
+from web_agent.core.errors import BudgetExhaustedError, ModelOutputError, ModelProviderError
+from web_agent.execution.budgets import BudgetExceededError, BudgetManager
+from web_agent.models.base import BaseModelAdapter, ModelRequest, ModelUsage, VerificationRequest
+from web_agent.models.prompting import (
+    SYSTEM_PROMPT,
+    VERIFY_SYSTEM_PROMPT,
+    build_action_user_text,
+    build_verify_user_text,
+    extract_json_object,
+)
+from web_agent.security.redaction import DataRedactor
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+_MTOK = Decimal(1_000_000)
 
 
 class OpenRouterModelAdapter(BaseModelAdapter):
-    """Adaptador seguro para invocar modelos vía OpenRouter API con control presupuestario."""
+    supports_vision = True
 
     def __init__(
         self,
-        model_name: str = "google/gemini-2.0-flash-001",
-        budget_manager: Optional[BudgetManager] = None,
-        timeout_seconds: float = 30.0,
-        max_cost_per_call: Decimal = Decimal("0.05"),
+        *,
+        api_key: str,
+        model_name: str,
+        budget: BudgetManager,
+        price_input_per_mtok: Decimal = Decimal("0.10"),
+        price_output_per_mtok: Decimal = Decimal("0.40"),
+        endpoint: str = OPENROUTER_URL,
+        transport: Optional[httpx.AsyncBaseTransport] = None,
     ):
-        self.model_name = model_name
-        self.budget_manager = budget_manager
-        self.timeout_seconds = timeout_seconds
-        self.max_cost_per_call = max_cost_per_call
-        self.api_key = os.environ.get("OPENROUTER_API_KEY")
-
-    async def propose_action(self, objective: str, page_state: str) -> ProposedAction:
-        if not self.api_key:
-            raise RuntimeError("OPENROUTER_API_KEY no configurada en el entorno.")
-
-        res_id = None
-        if self.budget_manager is not None:
-            res_id = self.budget_manager.reserve(self.max_cost_per_call)
-
-        system_prompt = (
-            "Eres un agente de navegación web restringido y seguro. "
-            "Devuelve EXCLUSIVAMENTE un objeto JSON válido que respete el esquema: "
-            "{\"action_type\": \"navigate\"|\"click\"|\"fill\"|\"extract\"|\"done\", "
-            "\"observation_id\": str|null, \"target_element_id\": str|null, "
-            "\"value\": str|null, \"url\": str|null, \"reasoning\": str}."
+        super().__init__()
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY no configurada.")
+        if budget is None:
+            raise ValueError("El presupuesto es obligatorio para llamadas reales.")
+        self._api_key = api_key
+        self.model_id = model_name
+        self.budget = budget
+        self.price_in = Decimal(price_input_per_mtok)
+        self.price_out = Decimal(price_output_per_mtok)
+        self.endpoint = endpoint
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            follow_redirects=False,
+            trust_env=False,
+            transport=transport,
         )
 
-        user_content = json.dumps({
-            "objective": objective,
-            "page_state": page_state,
-        }, ensure_ascii=False)
+    def __repr__(self) -> str:
+        return f"OpenRouterModelAdapter(model={self.model_id!r})"
 
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    # ------------------------------------------------------------ coste
+    @staticmethod
+    def _estimate_image_tokens(meta: dict) -> int:
+        w = int(meta.get("image_width_px", 1280) or 1280)
+        h = int(meta.get("image_height_px", 800) or 800)
+        return max(258, math.ceil(w / 768) * math.ceil(h / 768) * 258)
+
+    def _estimate_cost(self, input_tokens: int, output_tokens: int) -> Decimal:
+        return (Decimal(input_tokens) * self.price_in + Decimal(output_tokens) * self.price_out) / _MTOK
+
+    # ------------------------------------------------------------ llamadas
+    async def _call(self, system: str, user_text: str, image: Optional[bytes], mime: Optional[str],
+                    meta: dict, max_tokens: int, timeout: float) -> dict:
+        user_text = DataRedactor.redact_secrets_only(user_text)
+        content: list[dict] = [{"type": "text", "text": user_text}]
+        image_tokens = 0
+        if image is not None:
+            b64 = base64.b64encode(image).decode("ascii")
+            content.append({"type": "image_url", "image_url": {"url": f"data:{mime or 'image/png'};base64,{b64}"}})
+            image_tokens = self._estimate_image_tokens(meta)
+        est_in = (len(system) + len(user_text)) // 3 + image_tokens
+        reserve_amount = self._estimate_cost(est_in, max_tokens) * Decimal("1.5")
+        try:
+            reservation = self.budget.reserve(reserve_amount)
+        except BudgetExceededError as exc:
+            raise BudgetExhaustedError("Presupuesto de inferencia agotado.") from exc
+
+        payload = {
+            "model": self.model_id,
+            "temperature": 0.0,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": content},
+            ],
+            "usage": {"include": True},
+        }
+        started = time.monotonic()
         dispatched = False
         try:
-            async with httpx.AsyncClient(
-                timeout=self.timeout_seconds,
-                follow_redirects=False,
-                trust_env=False,
-            ) as client:
-                dispatched = True
-                response = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.model_name,
-                        "temperature": 0.0,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_content},
-                        ],
-                    },
-                )
-                response.raise_for_status()
-                data = response.json()
+            dispatched = True
+            response = await self._client.post(
+                self.endpoint,
+                headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=httpx.Timeout(timeout, connect=min(10.0, timeout)),
+            )
+        except BaseException as exc:
+            # La llamada pudo haberse facturado: contabilidad conservadora (ADR-003 §10.1).
+            self._settle(reservation, reserve_amount, 0, None)
+            if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+                raise ModelProviderError("El proveedor no respondió a tiempo.") from None
+            if isinstance(exc, httpx.HTTPError):
+                raise ModelProviderError("Error de red con el proveedor.") from None
+            raise
+        latency = time.monotonic() - started
+        if response.status_code >= 400:
+            self._settle(reservation, reserve_amount if dispatched else Decimal(0), 0, None)
+            raise ModelProviderError(f"El proveedor respondió HTTP {response.status_code}.")
+        try:
+            data = response.json()
+            usage = data.get("usage") or {}
+            in_tok = int(usage.get("prompt_tokens") or est_in)
+            out_tok = int(usage.get("completion_tokens") or max_tokens)
+            reported = usage.get("cost")
+            reported_dec = Decimal(str(reported)) if reported is not None else None
+            estimated = self._estimate_cost(in_tok, out_tok)
+            self._settle(reservation, estimated, in_tok + out_tok, reported_dec)
+            self.last_usage = ModelUsage(
+                model_id=self.model_id,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                estimated_cost_usd=estimated,
+                provider_reported_cost_usd=reported_dec,
+                latency_seconds=latency,
+            )
+            message = data["choices"][0]["message"]
+            text = message.get("content")
+            if isinstance(text, list):
+                text = "".join(part.get("text", "") for part in text if isinstance(part, dict))
+            return extract_json_object(text or "")
+        except BudgetExhaustedError:
+            raise
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise ModelOutputError("Respuesta del proveedor sin JSON válido.") from exc
 
-                content = data["choices"][0]["message"]["content"]
-                # Parsear contenido JSON
-                raw_json = content.strip()
-                if raw_json.startswith("```"):
-                    lines = raw_json.split("\n")
-                    raw_json = "\n".join(lines[1:-1])
+    def _settle(self, reservation: str, amount: Decimal, tokens: int, reported: Optional[Decimal]) -> None:
+        try:
+            if amount > 0:
+                self.budget.confirm(reservation, actual_spend=amount, tokens_used=tokens, provider_reported=reported)
+            else:
+                self.budget.release(reservation)
+        except BudgetExceededError as exc:
+            raise BudgetExhaustedError("Presupuesto de inferencia agotado.") from exc
+        except KeyError:
+            pass
 
-                parsed = json.loads(raw_json)
-                action = ProposedAction.model_validate(parsed)
+    async def propose_action(self, request: ModelRequest) -> dict:
+        return await self._call(
+            SYSTEM_PROMPT,
+            build_action_user_text(request),
+            request.image_bytes,
+            request.image_mime,
+            request.observation_meta,
+            request.max_output_tokens,
+            request.timeout_seconds,
+        )
 
-                if self.budget_manager is not None and res_id is not None:
-                    # Estimar gasto según uso
-                    usage = data.get("usage", {})
-                    tokens = usage.get("total_tokens", 0)
-                    actual_cost = Decimal(str(tokens)) * Decimal("0.000002")
-                    self.budget_manager.confirm(res_id, actual_spend=actual_cost, tokens_used=tokens)
-
-                return action
-
-        except Exception as exc:
-            if self.budget_manager is not None and res_id is not None:
-                if not dispatched:
-                    self.budget_manager.release(res_id)
-                else:
-                    # Si ya fue enviado, liquidar contra la reserva para no fugar presupuesto
-                    try:
-                        self.budget_manager.confirm(res_id, actual_spend=self.max_cost_per_call)
-                    except Exception:
-                        pass
-            raise ModelOutputError("Fallo al consultar el proveedor de modelo externo.") from exc
+    async def verify_outcome(self, request: VerificationRequest) -> dict:
+        return await self._call(
+            VERIFY_SYSTEM_PROMPT,
+            build_verify_user_text(request),
+            request.image_bytes,
+            request.image_mime,
+            request.observation_meta,
+            request.max_output_tokens,
+            request.timeout_seconds,
+        )

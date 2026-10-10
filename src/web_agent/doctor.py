@@ -21,7 +21,7 @@ def run_doctor() -> bool:
         all_ok = False
 
     # 2. Dependencias críticas
-    deps = ["playwright", "pydantic", "yaml", "pytest"]
+    deps = ["playwright", "pydantic", "yaml", "fastapi", "uvicorn", "httpx"]
     for dep in deps:
         try:
             __import__(dep)
@@ -38,13 +38,16 @@ def run_doctor() -> bool:
     if not dir_ok:
         all_ok = False
 
-    # 4. Verificación de variables de entorno (sin mostrar secretos)
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if api_key and len(api_key.strip()) > 5:
-        masked = f"{api_key[:4]}...{api_key[-3:]}"
-        print(f"[OK] Variable OPENROUTER_API_KEY: Configurada ({masked})")
-    else:
-        print("[INFO] Variable OPENROUTER_API_KEY: No configurada (Modo simulacion / offline disponible)")
+    # 4. Configuración del servicio (sin mostrar secretos)
+    from web_agent.config import Settings
+
+    settings = Settings.from_env()
+    print(f"[{'OK' if settings.bearer_token else 'FAIL'}] EVALUATION_BEARER_TOKEN: "
+          f"{'configurado' if settings.bearer_token else 'NO configurado (la API respondera 503)'}")
+    print(f"[{'OK' if settings.model_configured else 'FAIL'}] Modelo: proveedor={settings.model_provider} "
+          f"modelo={settings.model_name} clave={'configurada' if settings.openrouter_api_key else 'no'}")
+    print(f"[INFO] Limites: timeout={settings.task_timeout_seconds}s acciones={settings.max_actions_per_task} "
+          f"concurrencia={settings.max_concurrent_tasks} worker={settings.worker_mode}")
 
     # 5. Carga de perfil de ejemplo
     profile_path = Path("profiles/examples/portal_demo.yaml")

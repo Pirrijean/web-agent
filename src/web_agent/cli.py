@@ -1,109 +1,111 @@
+"""CLI de desarrollo y operación de web-agent."""
+
+from __future__ import annotations
+
 import argparse
 import asyncio
 import os
 import sys
 from pathlib import Path
 
-from web_agent.browser.session import SecureBrowserSession
-from web_agent.core.runner import AgentRunner
-from web_agent.core.schemas import load_profile
-from web_agent.doctor import run_doctor
-from web_agent.models.adapters.openrouter import OpenRouterModelAdapter
-from web_agent.models.adapters.scripted import ScriptedModelAdapter
+from web_agent.config import Settings
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="CLI de desarrollo y ejecución local para web-agent.",
-        prog="python -m web_agent.cli",
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Comando a ejecutar")
+    parser = argparse.ArgumentParser(description="CLI de web-agent.", prog="python main.py")
+    sub = parser.add_subparsers(dest="command")
 
-    # doctor
-    subparsers.add_parser("doctor", help="Comprueba el entorno local y dependencias")
+    sub.add_parser("doctor", help="Comprueba el entorno local y dependencias")
+    sub.add_parser("serve", help="Levanta la API REST (GET /health, POST /tasks, GET /tasks/{id})")
 
-    # inspect-profile
-    inspect_parser = subparsers.add_parser("inspect-profile", help="Inspecciona y valida un archivo de perfil YAML")
-    inspect_parser.add_argument("profile_path", type=str, help="Ruta al archivo YAML del perfil")
+    insp = sub.add_parser("inspect-profile", help="Valida un perfil YAML")
+    insp.add_argument("profile_path")
 
-    # run
-    run_parser = subparsers.add_parser("run", help="Ejecuta una tarea del agente con un perfil específico")
-    run_parser.add_argument("--profile", "-p", type=str, default="profiles/examples/portal_demo.yaml", help="Ruta al perfil")
-    run_parser.add_argument("--objective", "-o", type=str, default="Comprobar acceso y navegación autorizada", help="Objetivo")
-    run_parser.add_argument("--adapter", "-a", choices=["scripted", "openrouter"], default="scripted", help="Adaptador de modelo (scripted o openrouter)")
-    run_parser.add_argument("--model", "-m", type=str, default="google/gemini-2.0-flash-001", help="Nombre del modelo si se usa OpenRouter")
-    run_parser.add_argument("--headless", action="store_true", default=True, help="Ejecutar en modo headless")
-    run_parser.add_argument("--no-headless", action="store_false", dest="headless", help="Ejecutar mostrando la ventana del navegador")
-
+    run = sub.add_parser("run", help="Ejecuta una tarea localmente")
+    run.add_argument("--objective", "-o", required=True)
+    run.add_argument("--desktop-url", help="URL del escritorio remoto (modo visual_only)")
+    run.add_argument("--password-env", default="DESKTOP_PASSWORD",
+                     help="Variable de entorno con la contraseña del escritorio (nunca por argumento)")
+    run.add_argument("--profile", "-p", help="Perfil YAML (alternativa a --desktop-url)")
+    run.add_argument("--no-headless", action="store_false", dest="headless", default=True)
     return parser.parse_args()
 
 
-async def execute_run(profile_path: str, objective: str, headless: bool, adapter_name: str = "scripted", model_name: str = "google/gemini-2.0-flash-001"):
-    p = Path(profile_path)
-    if not p.exists():
-        print(f"Error: Perfil '{profile_path}' no encontrado.")
+async def execute_run(args) -> int:
+    from dataclasses import replace
+
+    from web_agent.browser.session import SecureBrowserSession
+    from web_agent.core.context import SecretStore
+    from web_agent.core.runner import AgentRunner
+    from web_agent.core.schemas import DESKTOP_PASSWORD_SECRET, build_desktop_profile, load_profile
+    from web_agent.service.worker import build_model
+
+    settings = replace(Settings.from_env(), headless=args.headless)
+    if not settings.model_configured:
+        print("Error: configure OPENROUTER_API_KEY o WEB_AGENT_MODEL_PROVIDER=scripted.")
         return 1
-
-    profile = load_profile(p)
-    print(f"[*] Perfil cargado: {profile.id} (v{profile.version})")
-    print(f"[*] Orígenes permitidos: {', '.join(profile.security.allowed_origins)}")
-    print(f"[*] Objetivo: {objective}")
-    print(f"[*] Adaptador: {adapter_name}" + (f" ({model_name})" if adapter_name == "openrouter" else ""))
-
-    browser = SecureBrowserSession(
-        headless=headless,
-        chromium_sandbox=profile.browser.chromium_sandbox,
-    )
-
-    if adapter_name == "openrouter":
-        if not os.environ.get("OPENROUTER_API_KEY"):
-            print("Error: OPENROUTER_API_KEY no configurada para el adaptador OpenRouter.")
-            return 1
-        model = OpenRouterModelAdapter(model_name=model_name)
+    if args.desktop_url:
+        profile = build_desktop_profile(
+            task_id="cli",
+            desktop_url=args.desktop_url,
+            allow_private_desktop=settings.allow_private_desktop,
+            allow_loopback_desktop=settings.allow_loopback_desktop,
+            max_steps=settings.max_actions_per_task,
+            headless=settings.headless,
+            chromium_sandbox=settings.chromium_sandbox,
+        )
+    elif args.profile:
+        profile = load_profile(Path(args.profile))
     else:
-        model = ScriptedModelAdapter()
-
-    runner = AgentRunner(profile=profile, model=model, browser=browser)
-
-    print("[*] Iniciando ciclo de ejecución...")
-    result = await runner.run(objective)
-    print("--------------------------------------------------")
-    print(f"Resultado final: {result.final_state.value}")
-    print(f"Pasos ejecutados: {result.steps_executed}")
-    print(f"Razón: {result.reason}")
-    print("--------------------------------------------------")
-    return 0 if result.final_state.value == "SUCCEEDED_VERIFIED" else 1
+        print("Error: indique --desktop-url o --profile.")
+        return 1
+    password = os.environ.get(args.password_env)
+    secrets = SecretStore({DESKTOP_PASSWORD_SECRET: password} if password else {})
+    browser = SecureBrowserSession(
+        headless=settings.headless,
+        chromium_sandbox=settings.chromium_sandbox,
+        viewport_width=settings.viewport_width,
+        viewport_height=settings.viewport_height,
+    )
+    model = build_model(settings)
+    runner = AgentRunner(profile, model, browser, settings=settings)
+    print(f"[*] Perfil: {profile.id} | modo: {profile.perception.mode} | modelo: {getattr(model, 'model_id', '?')}")
+    try:
+        result = await runner.run(args.objective, desktop_url=args.desktop_url, secrets=secrets)
+    finally:
+        await model.aclose()
+    print("-" * 60)
+    print(f"Estado: {result.final_state.value} ({result.reason_code})")
+    print(f"Pasos: {result.steps_executed} | llamadas al modelo: {result.model_calls} | {result.elapsed_seconds}s")
+    print(f"Resumen: {result.summary}")
+    return 0 if result.final_state.value == "succeeded_verified" else 1
 
 
 def main():
     args = parse_args()
     if args.command == "doctor":
-        success = run_doctor()
-        sys.exit(0 if success else 1)
+        from web_agent.doctor import run_doctor
+
+        sys.exit(0 if run_doctor() else 1)
+    elif args.command == "serve":
+        from web_agent.entrypoint import serve
+
+        serve()
     elif args.command == "inspect-profile":
+        from web_agent.core.schemas import load_profile
+
         p = Path(args.profile_path)
         if not p.exists():
             print(f"Error: No existe el archivo {p}")
             sys.exit(1)
         profile = load_profile(p)
-        print(f"Perfil validado con éxito: {profile.id}")
-        print(f"Orígenes: {list(profile.security.allowed_origins)}")
-        print(f"Permisos: navegación={profile.permissions.navigation}, forms={profile.permissions.fill_forms}")
+        print(f"Perfil validado: {profile.id} (modo {profile.perception.mode})")
+        print(f"Orígenes: {list(profile.security.allowed_origins)} | escritorio: {profile.security.desktop_origin}")
         sys.exit(0)
     elif args.command == "run":
-        exit_code = asyncio.run(
-            execute_run(
-                args.profile,
-                args.objective,
-                args.headless,
-                adapter_name=args.adapter,
-                model_name=args.model,
-            )
-        )
-        sys.exit(exit_code)
+        sys.exit(asyncio.run(execute_run(args)))
     else:
-        # Por defecto muestra ayuda
-        print("Uso: python -m web_agent.cli [doctor | inspect-profile | run] --help")
+        print("Uso: python main.py [doctor | serve | inspect-profile | run] --help")
         sys.exit(0)
 
 

@@ -1,55 +1,53 @@
-"""Punto de entrada desacoplado para evaluación oficial (Fase Entrypoint).
+"""Entrypoint de evaluación (documento maestro §12).
 
-Este módulo actúa como adaptador del contrato oficial del juez de la hackathon.
-Cuando se publique el brief a las 10:10 con el formato de entrada/salida requerido,
-este archivo traduce los parámetros al AgentRunner sin tocar la lógica interna.
+``uvicorn web_agent.entrypoint:app`` expone ``GET /health``, ``POST /tasks`` y
+``GET /tasks/{task_id}`` con autenticación Bearer. La aplicación se crea de
+forma diferida al acceder a ``app`` para leer la configuración del entorno.
+
+``python -m web_agent.entrypoint --health`` comprueba la configuración local
+sin lanzar navegador ni consumir inferencia.
 """
 
-import asyncio
+from __future__ import annotations
+
 import sys
-from typing import Any, Dict
 
-from web_agent.browser.session import SecureBrowserSession
-from web_agent.core.runner import AgentRunner
-from web_agent.core.schemas import TaskProfile, load_profile
-from web_agent.models.adapters.scripted import ScriptedModelAdapter
+from web_agent.config import Settings
+
+_app = None
 
 
-async def evaluate_task(task_payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Adaptador de evaluación que recibe el diccionario de tarea y devuelve el dict de resultado."""
-    profile_path = task_payload.get("profile_path", "profiles/examples/portal_demo.yaml")
-    objective = task_payload.get("objective", "Navegar y comprobar estado")
+def get_app():
+    global _app
+    if _app is None:
+        from web_agent.api.app import create_app
 
-    profile: TaskProfile = load_profile(profile_path)
-    browser = SecureBrowserSession(
-        headless=task_payload.get("headless", True),
-        chromium_sandbox=profile.browser.chromium_sandbox,
-    )
-    model = ScriptedModelAdapter()
-    runner = AgentRunner(profile=profile, model=model, browser=browser)
-
-    result = await runner.run(objective)
-    return {
-        "run_id": result.run_id,
-        "status": result.final_state.value,
-        "steps": result.steps_executed,
-        "reason": result.reason,
-        "blocked_requests": result.blocked_requests,
-    }
+        _app = create_app(Settings.from_env())
+    return _app
 
 
-def main():
+def __getattr__(name: str):
+    if name == "app":
+        return get_app()
+    raise AttributeError(name)
+
+
+def serve() -> None:
+    import uvicorn
+
+    settings = Settings.from_env()
+    uvicorn.run("web_agent.entrypoint:app", host=settings.host, port=settings.port, log_level="info",
+                proxy_headers=True, forwarded_allow_ips="*")
+
+
+def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--health":
-        print("OK: web-agent entrypoint ready")
-        sys.exit(0)
-
-    # Ejecución por defecto para pruebas
-    sample_payload = {
-        "profile_path": "profiles/examples/portal_demo.yaml",
-        "objective": "Comprobar inicialización del entrypoint",
-    }
-    res = asyncio.run(evaluate_task(sample_payload))
-    print(res)
+        s = Settings.from_env()
+        ok = bool(s.bearer_token) and s.model_configured
+        print(f"{'OK' if ok else 'NOT_READY'}: token={'sí' if s.bearer_token else 'no'} "
+              f"modelo={'sí' if s.model_configured else 'no'} proveedor={s.model_provider}")
+        sys.exit(0 if ok else 1)
+    serve()
 
 
 if __name__ == "__main__":

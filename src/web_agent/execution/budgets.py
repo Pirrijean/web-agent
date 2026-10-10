@@ -1,4 +1,3 @@
-import json
 import os
 import tempfile
 import uuid
@@ -25,7 +24,11 @@ class BudgetState(BaseModel):
 
 
 class BudgetManager:
-    """Gestor contable estricto para prevenir sobrecostes (Fase Presupuestaria P0)."""
+    """Gestor contable estricto para prevenir sobrecostes (documento maestro §8.13).
+
+    Las cifras son estimaciones preventivas, no facturación real del proveedor.
+    El coste reportado por el proveedor, si existe, se registra por separado.
+    """
 
     def __init__(
         self,
@@ -43,6 +46,7 @@ class BudgetManager:
         self.reserved_spend_usd = Decimal("0.00")
         self.calls_completed = 0
         self.tokens_consumed = 0
+        self.provider_reported_spend_usd = Decimal("0.00")
         self.reservations: dict[str, Decimal] = {}
 
         if self.storage_path and self.storage_path.exists():
@@ -52,6 +56,14 @@ class BudgetManager:
     def remaining_budget_usd(self) -> Decimal:
         return max(Decimal("0.00"), self.limit_usd - (self.confirmed_spend_usd + self.reserved_spend_usd))
 
+    @property
+    def exhausted(self) -> bool:
+        return (
+            self.confirmed_spend_usd >= self.limit_usd
+            or self.calls_completed >= self.max_calls
+            or self.tokens_consumed >= self.max_output_tokens
+        )
+
     def can_afford(self, estimated_amount: Decimal | str | float) -> bool:
         amount = Decimal(str(estimated_amount))
         if amount < Decimal("0.00"):
@@ -59,6 +71,8 @@ class BudgetManager:
         if self.confirmed_spend_usd + self.reserved_spend_usd + amount > self.limit_usd:
             return False
         if self.calls_completed + len(self.reservations) >= self.max_calls:
+            return False
+        if self.tokens_consumed >= self.max_output_tokens:
             return False
         return True
 
@@ -82,8 +96,14 @@ class BudgetManager:
         reservation_id: str,
         actual_spend: Decimal | str | float,
         tokens_used: int = 0,
+        provider_reported: Decimal | None = None,
     ) -> None:
-        """Confirma el gasto real facturado tras recibir la respuesta."""
+        """Confirma el gasto estimado tras recibir (o perder) la respuesta.
+
+        Si el gasto supera la reserva se registra igualmente (contabilidad
+        conservadora) y se lanza ``BudgetExceededError`` solo si se supera el
+        límite global, lo que agota el presupuesto para llamadas posteriores.
+        """
         if reservation_id not in self.reservations:
             raise KeyError(f"Reserva inexistente o ya finalizada: {reservation_id}")
 
@@ -94,20 +114,21 @@ class BudgetManager:
         if not spent.is_finite() or spent < 0:
             raise ValueError("El gasto debe ser finito y no negativo.")
 
-        reserved_amt = self.reservations[reservation_id]
-        new_confirmed = self.confirmed_spend_usd + spent
-        if spent > reserved_amt or new_confirmed > self.limit_usd:
-            self._persist_state()
-            raise BudgetExceededError(
-                f"El gasto ({spent}) excede la reserva ({reserved_amt}) o el límite ({self.limit_usd})."
-            )
-
-        self.reservations.pop(reservation_id)
+        reserved_amt = self.reservations.pop(reservation_id)
         self.reserved_spend_usd = max(Decimal("0.00"), self.reserved_spend_usd - reserved_amt)
-        self.confirmed_spend_usd = new_confirmed
+        self.confirmed_spend_usd += spent
         self.calls_completed += 1
-        self.tokens_consumed += max(0, tokens_used)
+        self.tokens_consumed += max(0, int(tokens_used))
+        if provider_reported is not None:
+            try:
+                self.provider_reported_spend_usd += Decimal(str(provider_reported))
+            except Exception:
+                pass
         self._persist_state()
+        if self.confirmed_spend_usd > self.limit_usd:
+            raise BudgetExceededError(
+                f"El gasto confirmado ({self.confirmed_spend_usd}) supera el límite ({self.limit_usd})."
+            )
 
     def release(self, reservation_id: str) -> None:
         """Cancela una reserva si la llamada falló antes de emitirse o no se facturó."""
@@ -152,8 +173,9 @@ class BudgetManager:
         # Mantener el límite fijado por la política/operador; nunca aceptar que un archivo lo aumente
         self.confirmed_spend_usd = Decimal(state.confirmed_spend_usd)
         self.reserved_spend_usd = Decimal(state.reserved_spend_usd)
-        self.max_calls = state.max_calls
+        # Un archivo nunca puede aumentar los máximos del operador.
+        self.max_calls = min(self.max_calls, state.max_calls)
         self.calls_completed = state.calls_completed
-        self.max_output_tokens = state.max_output_tokens
+        self.max_output_tokens = min(self.max_output_tokens, state.max_output_tokens)
         self.tokens_consumed = state.tokens_consumed
         self.reservations = {k: Decimal(v) for k, v in state.reservations.items()}

@@ -14,6 +14,9 @@ profile:
     allow_downloads: false
     allow_arbitrary_code: false
 
+  perception:
+    mode: dom
+
   permissions:
     navigation: true
     read_visible_data: true

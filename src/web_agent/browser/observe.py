@@ -1,118 +1,139 @@
-import uuid
-from typing import Dict, List, Optional
-from playwright.async_api import Page
-from pydantic import BaseModel, ConfigDict, Field
+"""Observador DOM opcional (documento maestro §8.6).
 
+Solo se usa cuando el modo de percepción lo permite (``dom`` o ``auto``). En
+``visual_only`` no se invoca nunca. Correcciones respecto a la base anterior:
 
-class ObservedElement(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    element_id: str
-    role: str
-    name: str = Field(..., max_length=150)
-    is_enabled: bool = True
-    is_visible: bool = True
-    form_context: Optional[str] = None
+- Roles normalizados a roles ARIA que Playwright acepta en ``get_by_role``
+  (antes se emitía ``password_field``, que no es un rol válido).
+- Unicidad real calculada por (rol, nombre) en lugar de ``unique=True`` fijo.
+- Las referencias quedan ligadas a un ``observation_id`` concreto.
+"""
 
+from __future__ import annotations
 
-class PageObservationSnapshot(BaseModel):
-    """Instantánea inmutable y acotada del estado interactivo de la página (Fase 1 P0)."""
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    observation_id: str
-    url: str = Field(..., max_length=500)
-    title: str = Field(..., max_length=200)
-    elements: Dict[str, ObservedElement] = Field(default_factory=dict)
+import time
 
-    def to_model_prompt(self, max_chars: int = 2500) -> str:
-        """Genera un resumen textual seguro, sin exponer contraseñas ni superar el límite de coste."""
-        lines = [
-            f"OBSERVATION_ID: {self.observation_id}",
-            f"URL: {self.url}",
-            f"TITULO: {self.title}",
-            "ELEMENTOS INTERACTIVOS DISPONIBLES:",
-        ]
-        for eid, el in self.elements.items():
-            line = f"  [{eid}] {el.role.upper()}: '{el.name}'"
-            if el.form_context:
-                line += f" (Formulario: {el.form_context})"
-            lines.append(line)
+from web_agent.core.observation import DOMObservation, ElementRef
 
-        text = "\n".join(lines)
-        if len(text) > max_chars:
-            text = text[:max_chars] + "\n... [Elementos truncados por límite de seguridad de contexto]"
-        return text
+MAX_ELEMENTS = 60
+
+_JS_EXTRACTOR = """(maxItems) => {
+  const items = [];
+  const nodes = document.querySelectorAll(
+    'button, a[href], input, select, textarea, [role=button], [role=link], [role=checkbox], [role=tab], [role=menuitem]'
+  );
+  const inputRole = (el) => {
+    const t = (el.getAttribute('type') || 'text').toLowerCase();
+    if (['button', 'submit', 'reset', 'image'].includes(t)) return 'button';
+    if (t === 'checkbox') return 'checkbox';
+    if (t === 'radio') return 'radio';
+    if (t === 'range') return 'slider';
+    if (t === 'number') return 'spinbutton';
+    if (t === 'search') return 'searchbox';
+    if (el.hasAttribute('list')) return 'combobox';
+    return 'textbox';
+  };
+  for (const el of nodes) {
+    if (items.length >= maxItems) break;
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (type === 'hidden') continue;
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    if (rect.width === 0 || rect.height === 0 || style.visibility === 'hidden' || style.display === 'none') continue;
+    const tag = el.tagName.toLowerCase();
+    let role = el.getAttribute('role');
+    if (!role) {
+      if (tag === 'a') role = 'link';
+      else if (tag === 'button') role = 'button';
+      else if (tag === 'select') role = el.multiple ? 'listbox' : 'combobox';
+      else if (tag === 'textarea') role = 'textbox';
+      else if (tag === 'input') role = inputRole(el);
+      else role = 'generic';
+    }
+    let name = el.getAttribute('aria-label') || '';
+    if (!name && el.id) {
+      const lab = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+      if (lab) name = lab.innerText;
+    }
+    if (!name && el.closest('label')) name = el.closest('label').innerText;
+    if (!name) name = (tag === 'input' && ['button','submit','reset'].includes(type)) ? (el.value || '') : (el.innerText || '');
+    if (!name) name = el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('name') || '';
+    name = name.replace(/\\s+/g, ' ').trim().substring(0, 120);
+    const form = el.closest('form');
+    const inDialog = !!el.closest('dialog, [role=dialog], [role=alertdialog]');
+    const inTable = !!el.closest('table, [role=grid], [role=table]');
+    items.push({
+      role: role.toLowerCase(),
+      name: name,
+      enabled: !el.disabled && el.getAttribute('aria-disabled') !== 'true',
+      input_type: tag === 'input' ? (type || 'text') : null,
+      form_submit: !!form && (type === 'submit' || (tag === 'button' && (el.getAttribute('type') || 'submit') === 'submit')),
+      context: inDialog ? 'dialog' : (form ? 'form' : (inTable ? 'table' : 'page')),
+      sensitive: type === 'password',
+    });
+  }
+  return items;
+}"""
 
 
 class DOMObserver:
-    """Extrae de forma segura controles interactivos esenciales asignando identificadores temporales."""
-
     @staticmethod
-    async def capture_observation(page: Page) -> PageObservationSnapshot:
-        obs_id = f"obs_{uuid.uuid4().hex[:12]}"
-        if page is None or page.is_closed():
-            return PageObservationSnapshot(
-                observation_id=obs_id,
-                url="about:blank",
-                title="No page",
-                elements={},
-            )
-
-        title = await page.title()
+    async def capture(
+        page,
+        *,
+        run_id: str,
+        session_id: str,
+        page_id: str,
+        navigation_epoch: int,
+        geometry_revision: int,
+        include_text: bool = True,
+    ) -> DOMObservation:
+        title = (await page.title() or "")[:300]
         url = page.url
+        raw_items = await page.evaluate(_JS_EXTRACTOR, MAX_ELEMENTS)
+        visible_text = ""
+        if include_text:
+            try:
+                visible_text = (await page.inner_text("body", timeout=2000))[:6000]
+            except Exception:
+                visible_text = ""
 
-        # Extraer elementos interactivos clave mediante script seguro en el navegador
-        # Nunca extraemos valores de inputs de tipo password
-        js_extractor = """() => {
-            const items = [];
-            const interactive = document.querySelectorAll('button, a, input, select, textarea');
-            let idx = 0;
-            for (const el of interactive) {
-                if (idx >= 30) break; // Limite duro para acotar coste y contexto
-                const isPassword = el.type === 'password';
-                const isHidden = el.type === 'hidden' || el.offsetParent === null;
-                if (isHidden) continue;
+        counts: dict[tuple[str, str], int] = {}
+        cleaned = []
+        for item in raw_items or []:
+            role = str(item.get("role", "generic"))
+            if not role.isalpha() or not 2 <= len(role) <= 32:
+                role = "generic"
+            name = str(item.get("name") or "")[:300]
+            cleaned.append((role, name, item))
+            counts[(role, name)] = counts.get((role, name), 0) + 1
 
-                let role = el.tagName.toLowerCase();
-                if (role === 'a') role = 'link';
-                if (role === 'input') role = isPassword ? 'password_field' : (el.type || 'input');
-
-                let name = el.getAttribute('aria-label') || el.innerText || el.placeholder || el.name || '';
-                name = name.trim().substring(0, 100);
-
-                const form = el.closest('form');
-                const formName = form ? (form.name || form.id || 'form') : null;
-
-                items.push({
-                    element_id: 'e' + idx,
-                    role: role,
-                    name: isPassword ? '[CAMPO_PASSWORD_PROTEGIDO]' : name,
-                    is_enabled: !el.disabled,
-                    is_visible: true,
-                    form_context: formName
-                });
-                idx++;
-            }
-            return items;
-        }"""
-        try:
-            raw_items = await page.evaluate(js_extractor)
-        except Exception:
-            raw_items = []
-
-        elements_map: Dict[str, ObservedElement] = {}
-        for item in raw_items:
-            eid = item["element_id"]
-            elements_map[eid] = ObservedElement(
-                element_id=eid,
-                role=item["role"],
-                name=item["name"] or "sin_etiqueta",
-                is_enabled=item["is_enabled"],
-                is_visible=item["is_visible"],
-                form_context=item.get("form_context"),
+        elements = []
+        for idx, (role, name, item) in enumerate(cleaned):
+            elements.append(
+                ElementRef(
+                    element_id=f"e{idx}",
+                    role=role,
+                    name=name,
+                    enabled=bool(item.get("enabled", True)),
+                    input_type=(str(item["input_type"])[:32] if item.get("input_type") else None),
+                    form_submit=bool(item.get("form_submit")),
+                    context=item.get("context") if item.get("context") in ("page", "form", "dialog", "table") else "page",
+                    # Sin nombre accesible tampoco hay objetivo inequívoco.
+                    unique=bool(name) and counts[(role, name)] == 1,
+                    sensitive=bool(item.get("sensitive")),
+                )
             )
-
-        return PageObservationSnapshot(
-            observation_id=obs_id,
-            url=url,
-            title=title[:200] if title else "Sin titulo",
-            elements=elements_map,
+        return DOMObservation(
+            run_id=run_id,
+            session_id=session_id,
+            page_id=page_id,
+            navigation_epoch=navigation_epoch,
+            geometry_revision=geometry_revision,
+            captured_at_monotonic=time.monotonic(),
+            page_url=url,
+            title=title,
+            elements=tuple(elements),
+            visible_text=visible_text,
+            truncated=len(raw_items or []) >= MAX_ELEMENTS,
         )

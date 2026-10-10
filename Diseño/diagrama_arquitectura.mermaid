@@ -1,0 +1,34 @@
+```mermaid
+flowchart TD
+    E["Evaluador · Bearer"] --> API["API REST propia"]
+    API --> STORE["Registro de tareas y estados"]
+    API --> SUP["Supervisor · deadline 300 s"]
+    SUP --> RUN["AgentRunner"]
+
+    RUN --> OBS["Observar"]
+    OBS --> VIS["VisualObserver · modo principal"]
+    OBS --> DOM["DOMObserver · modo opcional"]
+
+    VIS --> MODEL["Adaptador LLM/VLM"]
+    DOM --> MODEL
+    MODEL --> POL["Validar contrato, contexto y permisos"]
+
+    POL --> SKILL["Skills nativas acotadas"]
+    POL --> EXEC["Ejecutor determinista"]
+    SKILL --> EXEC
+
+    EXEC --> BROWSER["Sesión Playwright"]
+    NET["Política de red y transporte autorizado"] --> BROWSER
+    BROWSER --> DESK["Escritorio / aplicación autorizada"]
+
+    EXEC --> VERIFY["Nueva observación y verificación"]
+    VERIFY -->|"Continuar"| OBS
+    VERIFY -->|"Recuperación segura"| REC["Diagnóstico y replanteamiento"]
+    REC --> OBS
+    VERIFY -->|"Resultado final"| STORE
+
+    RUN -.-> AUDIT["Auditoría redactada"]
+    POL -.-> AUDIT
+    EXEC -.-> AUDIT
+    VERIFY -.-> AUDIT
+```

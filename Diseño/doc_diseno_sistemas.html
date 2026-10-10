@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diseño de Sistemas — WEB-AGENT</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-purple: #c084fc;
+      --accent-emerald: #34d399;
+      --accent-rose: #fb7185;
+      --border: #334155;
+    }
+
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-size: 9.5pt !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .card {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
+        page-break-inside: avoid;
+        margin-bottom: 10px !important;
+      }
+      .badge, th {
+        background: #e2e8f0 !important;
+        color: #0f172a !important;
+      }
+      h1, h2, h3, strong {
+        color: #0f172a !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .svg-container {
+        max-height: 380px !important;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1e3a8a, #581c87);
+      padding: 20px 28px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #ffffff;
+    }
+
+    .subtitle {
+      color: #cbd5e1;
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 14px;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(8px);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+
+    h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    p, li {
+      font-size: 12.5px;
+      color: #cbd5e1;
+    }
+
+    ul {
+      padding-left: 18px;
+    }
+
+    li {
+      margin-bottom: 5px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    th, td {
+      padding: 8px 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: #0f172a;
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    .code-pill {
+      font-family: monospace;
+      background: #0f172a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #f472b6;
+      font-size: 11px;
+    }
+
+    .svg-container {
+      width: 100%;
+      background: #0b1120;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-bottom: 16px;
+      padding: 12px;
+    }
+
+    .svg-container img, .svg-container object {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .highlight-box {
+      background: rgba(162, 28, 175, 0.15);
+      border-left: 4px solid #c084fc;
+      padding: 10px 14px;
+      border-radius: 0 6px 6px 0;
+      margin-top: 8px;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 20px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div>
+      <h1>WEB-AGENT — DISEÑO DE SISTEMAS</h1>
+      <div class="subtitle">Automatización Inteligente de Sistemas Legacy de 15 años sin API | Enfoque Prioritario: Nivel 5 GUI / Canvas Puro</div>
+    </div>
+    <div>
+      <span class="badge">ENTREGA OFICIAL: 12:00</span>
+    </div>
+  </header>
+
+  <!-- Resumen y Planteamiento -->
+  <div class="grid-2">
+    <div class="card">
+      <h2>1. El Desafío Operativo (5 Sistemas Legacy)</h2>
+      <p>
+        Operar aplicaciones empresariales antiguas sin API, sin documentación técnica y cuyos proveedores originales desaparecieron. Todo se ejecuta por pantalla: formularios densos, ventanas emergentes (modales) y reportes exportados uno a uno.
+      </p>
+      <div class="highlight-box">
+        <strong>Zero-Shot Adaptability:</strong> El agente opera como un empleado nuevo en 5 sistemas diferentes sin código hardcodeado ni reentrenamiento previo.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. Principios y Filosofía de Ingeniería</h2>
+      <ul>
+        <li><strong>Sin herramientas externas de caja negra:</strong> Sin <em>LangChain</em> ni <em>Browser Use</em>. Plataforma propia determinista en Python asíncrono + Playwright.</li>
+        <li><strong>Separación Estricta:</strong> La IA propone planes bajo incertidumbre; el sistema valida, ejecuta con periféricos virtuales y audita de forma inmutable.</li>
+        <li><strong>Frontera <em>Fail-Closed</em>:</strong> Rechazo instantáneo ante violaciones de viewport, rangos privados o esquemas peligrosos.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Diagrama de Arquitectura Incrustado -->
+  <div class="svg-container">
+    <object data="diagrama_arquitectura.svg" type="image/svg+xml" style="width: 100%; min-height: 480px;"></object>
+  </div>
+
+  <!-- Nivel 5 y Skills -->
+  <div class="grid-2">
+    <div class="card">
+      <h2>3. Nivel 5: GUI Pura / Canvas / Escritorio (Foco Central)</h2>
+      <p>
+        En escritorios remotos y aplicaciones transmitidas por web (noVNC/Canvas), el DOM solo tiene una etiqueta <span class="code-pill">&lt;canvas&gt;</span>. La interacción es puramente visual:
+      </p>
+      <ul>
+        <li><strong>Captura Visual:</strong> <span class="code-pill">page.screenshot()</span> a resolución nativa del viewport.</li>
+        <li><strong>Normalización Espacial:</strong> Cuadrícula universal <span class="code-pill">[0, 1000]</span> en X e Y para desacoplar resoluciones.</li>
+        <li><strong>Des-normalización:</strong> <span class="code-pill">X_px = round((x/1000) * W)</span>, <span class="code-pill">Y_px = round((y/1000) * H)</span>.</li>
+        <li><strong>Periféricos Sintéticos:</strong> Clics de precisión, doble clic, foco con <span class="code-pill">Ctrl+A</span> + borrado + mecanografiado con delay humano.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>4. Catálogo de Skills Modulares Nativas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Skill</th>
+            <th>Propósito en Sistema Legacy</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>CanvasFormFill</strong></td>
+            <td>Foco por coordenadas, selección, limpieza de datos previos y tipeo seguro.</td>
+          </tr>
+          <tr>
+            <td><strong>LegacyPopupManager</strong></td>
+            <td>Detección visual de modales, alertas de confirmación y cierre vía Enter/Esc/Clic.</td>
+          </tr>
+          <tr>
+            <td><strong>ReportExportTracker</strong></td>
+            <td>Menús Archivo/Reportes, diálogos "Guardar como" y tracking de descarga.</td>
+          </tr>
+          <tr>
+            <td><strong>SelfHealingRetry</strong></td>
+            <td>Diferencial visual post-acción; recuperación si un clic no alteró pantalla.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Contrato del Entrypoint -->
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>5. Contrato Oficial del Entrypoint (Desplegado a las 20:00)</h2>
+    <div class="grid-3" style="margin-bottom: 0;">
+      <div>
+        <strong style="color: #34d399;">GET /health</strong>
+        <p style="font-size: 11.5px; margin-top: 4px;">Devuelve <span class="code-pill">200 OK</span>. Certifica que el navegador, el adaptador de IA y el almacenamiento están listos.</p>
+      </div>
+      <div>
+        <strong style="color: #60a5fa;">POST /tasks</strong>
+        <p style="font-size: 11.5px; margin-top: 4px;">Recibe tarea en lenguaje natural y escritorio (URL + contraseña). Responde en <strong style="color: #f59e0b;">&lt; 2 segundos</strong> con <span class="code-pill">{"task_id": "..."}</span>.</p>
+      </div>
+      <div>
+        <strong style="color: #c084fc;">GET /tasks/{task_id}</strong>
+        <p style="font-size: 11.5px; margin-top: 4px;">Devuelve estado (<span class="code-pill">en_curso</span>, <span class="code-pill">terminada</span>, <span class="code-pill">fallida</span>) y resumen descriptivo. Timeout: <strong style="color: #fb7185;">5 minutos</strong>.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    WEB-AGENT TEAM | Repositorio Oficial & Sistema Desplegable | Hackathon 2026 | Sistemas Design Deliverable (12:00)
+  </footer>
+</div>
+
+</body>
+</html>

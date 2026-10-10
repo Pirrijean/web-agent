@@ -73,6 +73,29 @@ class DataRedactor:
             cls._literal_secrets.clear()
 
     @classmethod
+    def unregister_secret(cls, value: str) -> None:
+        with cls._lock:
+            cls._literal_secrets.discard(value)
+
+    @classmethod
+    def redact_secrets_only(cls, text: str) -> str:
+        """Redacta solo secretos literales registrados.
+
+        Se usa para datos operativos enviados al modelo (p. ej. el objetivo):
+        enmascarar un correo o un número alteraría el valor que la tarea debe
+        introducir (§14). Los secretos reales nunca salen.
+        """
+        if not text:
+            return text
+        if not isinstance(text, str):
+            text = str(text)
+        with cls._lock:
+            literals = sorted(cls._literal_secrets, key=len, reverse=True)
+        for secret in literals:
+            text = text.replace(secret, "[REDACTED_SECRET]")
+        return text
+
+    @classmethod
     def redact(cls, text: str) -> str:
         if not text:
             return text
