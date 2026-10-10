@@ -19,3 +19,24 @@ def test_element_actions_are_fail_closed(action_type):
 
     with pytest.raises(PolicyViolationError):
         SecurityPolicyEnforcer(profile).validate_action(action)
+
+
+def test_forged_done_is_rejected():
+    from web_agent.core.schemas import ActionType
+
+    profile = TaskProfile(
+        id="test",
+        security={"allowed_origins": ["https://example.com"]},
+    )
+
+    forged = ProposedAction.model_construct(
+        action_type=ActionType.DONE,
+        target_element_id=None,
+        value=None,
+        url="https://example.com",
+        reasoning="Salida manipulada",
+    )
+
+    with pytest.raises(PolicyViolationError):
+        SecurityPolicyEnforcer(profile).validate_action(forged)
+

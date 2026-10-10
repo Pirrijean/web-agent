@@ -275,6 +275,22 @@ class TaskProfile(_Strict):
     audit: AuditConfig = AuditConfig()
 
 
+class RunRequest(_Strict):
+    objective: str = Field(
+        ...,
+        strict=True,
+        min_length=1,
+        max_length=MAX_OBJECTIVE_CHARS,
+    )
+
+    @field_validator("objective")
+    @classmethod
+    def validate_objective(cls, value: str) -> str:
+        if not value.strip() or "\x00" in value:
+            raise ValueError("Objetivo vacío o inválido.")
+        return value.strip()
+
+
 class RunResult(_Strict):
     run_id: str
     final_state: FinalState

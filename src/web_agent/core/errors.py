@@ -27,3 +27,7 @@ class ActionNotVerifiedError(WebAgentError):
 
 class ModelOutputError(WebAgentError):
     """El modelo devolvió una salida que no respeta el contrato de acciones."""
+
+
+class AuditUnavailableError(WebAgentError):
+    """No es posible conservar la trazabilidad obligatoria."""

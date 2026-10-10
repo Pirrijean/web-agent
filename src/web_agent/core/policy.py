@@ -1,3 +1,5 @@
+from pydantic import ValidationError
+
 from web_agent.core.schemas import ProposedAction, ActionType, TaskProfile
 from web_agent.core.errors import PolicyViolationError
 from web_agent.security.network_policy import NetworkPolicyValidator
@@ -12,8 +14,13 @@ class SecurityPolicyEnforcer:
         if not isinstance(action, ProposedAction):
             raise PolicyViolationError("Contrato de acción inválido.")
 
-        # Revalidar campos, incluso si la instancia llegó desde un adaptador.
-        action = ProposedAction.model_validate(action.model_dump())
+        # Revalidar campos, incluso si la instancia llegó desde un adaptador o model_construct.
+        try:
+            action = ProposedAction.model_validate(action.model_dump())
+        except ValidationError:
+            raise PolicyViolationError(
+                "La propuesta no respeta el contrato permitido."
+            ) from None
 
         if action.action_type == ActionType.NAVIGATE:
             if not self.profile.permissions.navigation:

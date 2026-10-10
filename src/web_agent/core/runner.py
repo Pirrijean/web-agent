@@ -3,11 +3,25 @@ import logging
 import uuid
 from typing import Optional
 
+from pydantic import ValidationError
+
 from web_agent.audit.events import AuditEvent, AuditLogger
 from web_agent.browser.session import SecureBrowserSession
-from web_agent.core.errors import ActionNotVerifiedError, PolicyViolationError
+from web_agent.core.errors import (
+    ActionNotVerifiedError,
+    AuditUnavailableError,
+    PolicyViolationError,
+)
 from web_agent.core.policy import SecurityPolicyEnforcer
-from web_agent.core.schemas import ActionType, FinalState, ProposedAction, RunResult, TaskProfile
+from web_agent.core.schemas import (
+    ActionType,
+    FinalState,
+    PageObservation,
+    ProposedAction,
+    RunRequest,
+    RunResult,
+    TaskProfile,
+)
 from web_agent.models.base import BaseModelAdapter
 from web_agent.recovery.strategies import FailureType, RecoveryStrategy
 from web_agent.security.redaction import DataRedactor
@@ -39,8 +53,22 @@ class AgentRunner:
     async def run(self, objective: str) -> RunResult:
         run_id = f"run_{uuid.uuid4().hex[:16]}"
         try:
+            # WEB-02: Validar el objetivo antes de abrir recursos
+            request = RunRequest(objective=objective)
+            validated_objective = request.objective
+        except Exception as exc:
+            safe_err = DataRedactor.redact(f"Solicitud rechazada: {exc}")
+            logger.error(safe_err)
+            return RunResult(
+                run_id=run_id,
+                final_state=FinalState.BLOCKED,
+                steps_executed=0,
+                reason="Objetivo no válido según el contrato de la plataforma.",
+            )
+
+        try:
             return await asyncio.wait_for(
-                self._run_loop(run_id, objective),
+                self._run_loop(run_id, validated_objective),
                 timeout=self.profile.execution.task_timeout_seconds,
             )
         except asyncio.TimeoutError:
@@ -55,8 +83,10 @@ class AgentRunner:
 
     async def _run_loop(self, run_id: str, objective: str) -> RunResult:
         steps_executed = 0
-        await self.browser.start()
         try:
+            # WEB-03: Inicio dentro del ámbito de limpieza
+            await self.browser.start()
+
             for step in range(self.profile.execution.max_steps):
                 steps_executed += 1
 
@@ -65,7 +95,7 @@ class AgentRunner:
 
                 # 2. Proponer (El LLM delibera sin tocar el DOM)
                 try:
-                    action: ProposedAction = await asyncio.wait_for(
+                    candidate = await asyncio.wait_for(
                         self.model.propose_action(objective, page_state),
                         timeout=self.profile.execution.model_timeout_seconds,
                     )
@@ -87,10 +117,51 @@ class AgentRunner:
                         reason="Error irrecuperable al consultar el modelo.",
                     )
 
-                # WA-08: Redactar antes de registrar logs
-                logger.info("Paso %d | Acción propuesta: %s", step, action.action_type.value)
+                # WEB-02: Revalidar inmediatamente la propuesta en la frontera
+                if not isinstance(candidate, ProposedAction):
+                    logger.error("Contrato de salida del modelo inválido.")
+                    return RunResult(
+                        run_id=run_id,
+                        final_state=FinalState.FAILED,
+                        steps_executed=steps_executed,
+                        reason="El modelo devolvió un objeto incompatible.",
+                    )
 
-                # WA-03: Manejo estricto de DONE e independencia del modelo
+                try:
+                    action = ProposedAction.model_validate(candidate.model_dump())
+                except ValidationError:
+                    logger.error("La propuesta del modelo no respeta el esquema de acción.")
+                    return RunResult(
+                        run_id=run_id,
+                        final_state=FinalState.BLOCKED,
+                        steps_executed=steps_executed,
+                        reason="Acción rechazada por validación de esquema.",
+                    )
+
+                # WEB-02: Validar con política de seguridad ANTES de logging y de procesar DONE / ASK_HUMAN
+                try:
+                    self.policy_enforcer.validate_action(action)
+                except PolicyViolationError as exc:
+                    safe_reason = DataRedactor.redact(str(exc))
+                    logger.error("Acción bloqueada por política: %s", safe_reason)
+                    await self._audit(
+                        run_id=run_id,
+                        action_type=action.action_type.value,
+                        details=safe_reason,
+                        is_success=False,
+                        blocked=True,
+                    )
+                    return RunResult(
+                        run_id=run_id,
+                        final_state=FinalState.BLOCKED,
+                        steps_executed=steps_executed,
+                        reason=safe_reason,
+                        blocked_requests=1,
+                    )
+
+                logger.info("Paso %d | Acción autorizada: %s", step, action.action_type.value)
+
+                # WA-03: Manejo estricto de DONE
                 if action.action_type == ActionType.DONE:
                     verified = await self._verify_success()
                     final_state = (
@@ -98,10 +169,10 @@ class AgentRunner:
                         if verified
                         else FinalState.NEEDS_HUMAN_REVIEW
                     )
-                    self._audit(
+                    await self._audit(
                         run_id=run_id,
                         action_type=action.action_type.value,
-                        details=f"DONE propuesto por el modelo. Verificado={verified}",
+                        details=f"DONE propuesto. Verificado={verified}",
                         is_success=verified,
                         blocked=False,
                     )
@@ -117,7 +188,7 @@ class AgentRunner:
                     )
 
                 if action.action_type == ActionType.ASK_HUMAN:
-                    self._audit(
+                    await self._audit(
                         run_id=run_id,
                         action_type=action.action_type.value,
                         details="Intervención humana solicitada.",
@@ -131,26 +202,14 @@ class AgentRunner:
                         reason="El agente solicitó confirmación humana.",
                     )
 
-                # 3. Validar con política de seguridad
-                try:
-                    self.policy_enforcer.validate_action(action)
-                except PolicyViolationError as exc:
-                    safe_reason = DataRedactor.redact(str(exc))
-                    logger.error("Acción bloqueada por política: %s", safe_reason)
-                    self._audit(
-                        run_id=run_id,
-                        action_type=action.action_type.value,
-                        details=safe_reason,
-                        is_success=False,
-                        blocked=True,
-                    )
-                    return RunResult(
-                        run_id=run_id,
-                        final_state=FinalState.BLOCKED,
-                        steps_executed=steps_executed,
-                        reason=safe_reason,
-                        blocked_requests=1,
-                    )
+                # WEB-04: Registrar intención autorizada ANTES de ejecutar
+                await self._audit(
+                    run_id=run_id,
+                    action_type=action.action_type.value,
+                    details="Intención autorizada antes de ejecutar",
+                    is_success=True,
+                    blocked=False,
+                )
 
                 # 4. Ejecutar con política de reintentos
                 success = False
@@ -165,11 +224,10 @@ class AgentRunner:
                         success = True
                         break
                     except PolicyViolationError as exc:
-                        # Una violación durante la ejecución (ej. redirección no autorizada) nunca se reintenta
                         last_error = exc
                         safe_reason = DataRedactor.redact(str(exc))
                         logger.error("Violación de política durante ejecución: %s", safe_reason)
-                        self._audit(
+                        await self._audit(
                             run_id=run_id,
                             action_type=action.action_type.value,
                             details=safe_reason,
@@ -194,7 +252,7 @@ class AgentRunner:
                         logger.warning(safe_warn)
                         await asyncio.sleep(1)
 
-                self._audit(
+                await self._audit(
                     run_id=run_id,
                     action_type=action.action_type.value,
                     details="Ejecución exitosa" if success else DataRedactor.redact(str(last_error)),
@@ -220,28 +278,48 @@ class AgentRunner:
         finally:
             await self.browser.stop()
 
-    def _audit(self, run_id: str, action_type: str, details: str, is_success: bool, blocked: bool):
+    async def _audit(
+        self,
+        run_id: str,
+        action_type: str,
+        details: str,
+        is_success: bool,
+        blocked: bool,
+    ):
+        """WEB-04: Auditoría fail-safe. Detiene la ejecución si falla la persistencia obligatoria."""
+        event = AuditEvent(
+            run_id=run_id,
+            action_type=action_type,
+            details=DataRedactor.redact(details),
+            is_success=is_success,
+            blocked_by_policy=blocked,
+        )
         try:
-            self.audit_logger.log_event(
-                AuditEvent(
-                    run_id=run_id,
-                    action_type=action_type,
-                    details=details,
-                    is_success=is_success,
-                    blocked_by_policy=blocked,
-                )
-            )
-        except Exception as exc:
-            logger.warning("Fallo al escribir evento de auditoría: %s", DataRedactor.redact(str(exc)))
+            await asyncio.to_thread(self.audit_logger.log_event, event)
+        except Exception:
+            raise AuditUnavailableError(
+                "Auditoría no disponible; ejecución detenida."
+            ) from None
 
     async def _get_page_state(self) -> str:
-        """Extrae de forma segura la semántica, ocultando atributos frágiles."""
-        if self.browser.page and not self.browser.page.is_closed():
-            try:
-                return await self.browser.page.title()
-            except Exception:
-                return "Error al leer página"
-        return "No page loaded"
+        """WEB-04: No enviar observaciones sin permiso y sin redacción."""
+        if not self.profile.permissions.read_visible_data:
+            return "Observación web no autorizada por el perfil."
+
+        page = self.browser.page
+        if page is None or page.is_closed():
+            raise ActionNotVerifiedError("No existe una página observable.")
+
+        try:
+            title = await page.title()
+        except Exception:
+            title = ""
+
+        observation = PageObservation(
+            url=page.url,
+            title=title[:300],
+        )
+        return DataRedactor.redact(observation.to_model_prompt())
 
     async def _execute_action(self, action: ProposedAction):
         """WA-02: Rechazar operaciones no implementadas; no permitir falsos éxitos."""
@@ -294,4 +372,3 @@ class AgentRunner:
                 return False
 
         return True
-
