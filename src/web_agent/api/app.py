@@ -115,7 +115,7 @@ def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskM
     async def console():
         return HTMLResponse(console_html)
 
-    @app.get("/health", dependencies=[Depends(require_bearer)])
+    @app.get("/health")
     async def health():
         info = manager.health()
         return JSONResponse(info, status_code=200)

@@ -77,7 +77,7 @@ def wait_terminal(client, task_id, timeout=10):
 
 def test_bearer_required_on_every_endpoint(make_client):
     c = make_client()
-    for method, path in [("get", "/health"), ("post", "/tasks"), ("get", "/tasks/task_" + "0" * 20)]:
+    for method, path in [("post", "/tasks"), ("get", "/tasks/task_" + "0" * 20)]:
         assert getattr(c, method)(path).status_code == 401
         assert getattr(c, method)(path, headers={"Authorization": "Bearer otro"}).status_code == 401
         assert getattr(c, method)(path, headers={"Authorization": TOKEN}).status_code == 401
@@ -86,7 +86,7 @@ def test_bearer_required_on_every_endpoint(make_client):
 def test_service_without_token_fails_closed(tmp_path):
     settings = Settings(bearer_token=None, model_provider="scripted", audit_dir=str(tmp_path))
     with TestClient(create_app(settings)) as c:
-        assert c.get("/health", headers=AUTH).status_code == 503
+        assert c.post("/tasks", json={}, headers=AUTH).status_code == 503
 
 
 def test_health_ok(make_client):
@@ -191,8 +191,9 @@ def test_console_is_public_but_never_embeds_the_token(make_client):
         a = c.get(asset)
         assert a.status_code == 200 and TOKEN not in a.text
         assert a.headers["content-security-policy"] == csp
-    # La consola no abre ninguna puerta en la API.
-    assert c.get("/health").status_code == 401
+    # La consola no abre ninguna puerta en la API (/tasks sigue protegido).
+    assert c.get("/health").status_code == 200
+    assert c.post("/tasks").status_code == 401
 
 
 def test_console_shows_docs_link_only_when_docs_exposed(make_client):
