@@ -146,15 +146,10 @@ class AgentRunner:
                 )
 
         except AuditUnavailableError:
-            state = (
-                FinalState.BLOCKED
-                if progress.actions_attempted == 0
-                else FinalState.NEEDS_HUMAN_REVIEW
-            )
             result = self._result(
                 run_id,
                 progress,
-                state,
+                FinalState.BLOCKED,
                 "Ejecución detenida: auditoría no disponible.",
             )
 
@@ -168,15 +163,10 @@ class AgentRunner:
             )
 
         except (TimeoutError, asyncio.TimeoutError):
-            state = (
-                FinalState.FAILED
-                if progress.actions_attempted == 0
-                else FinalState.NEEDS_HUMAN_REVIEW
-            )
             result = self._result(
                 run_id,
                 progress,
-                state,
+                FinalState.FAILED,
                 "Tiempo global agotado. No se repiten operaciones.",
             )
 
@@ -184,7 +174,7 @@ class AgentRunner:
             result = self._result(
                 run_id,
                 progress,
-                FinalState.NEEDS_HUMAN_REVIEW,
+                FinalState.FAILED,
                 "Ejecución abortada por un fallo interno.",
             )
 
@@ -200,7 +190,7 @@ class AgentRunner:
             result = self._result(
                 run_id,
                 progress,
-                FinalState.NEEDS_HUMAN_REVIEW,
+                FinalState.FAILED,
                 "No se pudo confirmar el cierre de todos los recursos.",
             )
 
@@ -216,11 +206,7 @@ class AgentRunner:
             result = self._result(
                 run_id,
                 progress,
-                (
-                    FinalState.BLOCKED
-                    if progress.actions_attempted == 0
-                    else FinalState.NEEDS_HUMAN_REVIEW
-                ),
+                FinalState.BLOCKED,
                 "No se pudo persistir el estado final.",
             )
 
@@ -300,8 +286,8 @@ class AgentRunner:
                 return self._result(
                     run_id,
                     progress,
-                    FinalState.NEEDS_HUMAN_REVIEW,
-                    "Intervención humana solicitada.",
+                    FinalState.BLOCKED,
+                    "Intervención humana no admitida en modo de ejecución autónoma.",
                 )
 
             if action.action_type == ActionType.DONE:
@@ -315,7 +301,7 @@ class AgentRunner:
                     (
                         FinalState.SUCCEEDED_VERIFIED
                         if verified
-                        else FinalState.NEEDS_HUMAN_REVIEW
+                        else FinalState.FAILED
                     ),
                     (
                         "Condición final verificada."
@@ -338,7 +324,7 @@ class AgentRunner:
                 return self._result(
                     run_id,
                     progress,
-                    FinalState.NEEDS_HUMAN_REVIEW,
+                    FinalState.FAILED,
                     "Resultado de navegación no verificable. No se repite.",
                 )
 

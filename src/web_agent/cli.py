@@ -60,7 +60,7 @@ async def execute_run(profile_path: str, objective: str, headless: bool):
     print(f"Pasos ejecutados: {result.steps_executed}")
     print(f"Razón: {result.reason}")
     print("--------------------------------------------------")
-    return 0 if result.final_state.value in ("SUCCEEDED_VERIFIED", "NEEDS_HUMAN_REVIEW") else 1
+    return 0 if result.final_state.value == "SUCCEEDED_VERIFIED" else 1
 
 
 def main():

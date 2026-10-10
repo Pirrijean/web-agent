@@ -167,5 +167,5 @@ def test_read_permission_prevents_title_read():
         ).run("Consultar página")
     )
 
-    assert result.final_state == FinalState.NEEDS_HUMAN_REVIEW
+    assert result.final_state == FinalState.BLOCKED
     assert browser.page.title_reads == 0
