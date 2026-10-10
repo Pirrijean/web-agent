@@ -17,6 +17,7 @@ HARD_TASK_TIMEOUT_SECONDS = 300.0
 
 WorkerMode = Literal["subprocess", "inprocess"]
 ModelProvider = Literal["openrouter", "scripted"]
+DEFAULT_TEAM_TOKEN = "ftr_bc8368827e6236b72e1ce711edb34360"
 
 
 def _load_env_file() -> None:
@@ -164,9 +165,6 @@ class Settings:
         if self.model_provider == "scripted":
             return True
         return bool(self.openrouter_api_key)
-
-DEFAULT_TEAM_TOKEN = "ftr_bc8368827e6236b72e1ce711edb34360"
-
 
     @classmethod
     def from_env(cls) -> "Settings":
