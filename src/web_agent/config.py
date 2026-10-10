@@ -10,12 +10,35 @@ from __future__ import annotations
 import os
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal
 
 HARD_TASK_TIMEOUT_SECONDS = 300.0
 
 WorkerMode = Literal["subprocess", "inprocess"]
 ModelProvider = Literal["openrouter", "scripted"]
+
+
+def _load_env_file() -> None:
+    candidates = (
+        Path(".env"),
+        Path(__file__).resolve().parents[2] / ".env",
+    )
+    for env_path in candidates:
+        if env_path.is_file():
+            try:
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, _, v = line.partition("=")
+                    k = k.strip()
+                    v = v.strip().strip("'\"")
+                    if k and k not in os.environ:
+                        os.environ[k] = v
+            except Exception:
+                pass
+            break
 
 
 def _env_str(name: str, default: str | None = None) -> str | None:
@@ -127,6 +150,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        _load_env_file()
         provider = _env_str("WEB_AGENT_MODEL_PROVIDER", "openrouter")
         if provider not in ("openrouter", "scripted"):
             provider = "openrouter"
