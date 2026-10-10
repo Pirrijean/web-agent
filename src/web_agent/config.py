@@ -119,6 +119,10 @@ class Settings:
     cleanup_timeout_seconds: float = 5.0
     observation_max_age_seconds: float = 15.0
     typing_delay_ms: int = 20
+    click_hold_ms: int = 150  # < 100 ms entre bajar y soltar: el escritorio VNC ignora el clic
+    clear_before_default: bool = True  # escribir sobre texto concatena: seleccionar todo antes
+    settle_max_seconds: float = 1.5  # la pantalla tarda hasta 1 s en repintar tras un clic
+    settle_stable_seconds: float = 0.3
     max_concurrent_tasks: int = 2
     worker_mode: WorkerMode = "subprocess"
 
@@ -131,6 +135,17 @@ class Settings:
     # --- Red ---
     allow_private_desktop: bool = True
     allow_loopback_desktop: bool = False
+
+    # --- Motor tri-nivel (Nivel 3 local / Nivel 2 macro / Nivel 1 clásico) ---
+    tiered_engine: bool = True
+    level3_enabled: bool = True  # efectivo solo con el extra "ocr" instalado y memoria suficiente
+    level2_enabled: bool = True
+    dual_vision_enabled: bool = False
+    level3_timeout_seconds: float = 2.5
+    ocr_threads: int = 2
+    min_free_memory_mb: int = 600
+    burst_max_changed_fraction: float = 0.15
+    verify_stability_seconds: float = 1.2
 
     # --- Auditoría / evidencia ---
     audit_dir: str = "./data/audit"
@@ -180,6 +195,10 @@ class Settings:
             cleanup_timeout_seconds=_env_float("WEB_AGENT_CLEANUP_TIMEOUT_SECONDS", 5.0, 1.0, 30.0),
             observation_max_age_seconds=_env_float("WEB_AGENT_OBSERVATION_MAX_AGE_SECONDS", 15.0, 1.0, 120.0),
             typing_delay_ms=_env_int("WEB_AGENT_TYPING_DELAY_MS", 20, 0, 200),
+            click_hold_ms=_env_int("WEB_AGENT_CLICK_HOLD_MS", 150, 0, 1000),
+            clear_before_default=_env_bool("WEB_AGENT_CLEAR_BEFORE_DEFAULT", True),
+            settle_max_seconds=_env_float("WEB_AGENT_SETTLE_MAX_SECONDS", 1.5, 0.0, 5.0),
+            settle_stable_seconds=_env_float("WEB_AGENT_SETTLE_STABLE_SECONDS", 0.3, 0.0, 2.0),
             max_concurrent_tasks=_env_int("MAX_CONCURRENT_TASKS", 2, 1, 16),
             worker_mode=worker_mode,  # type: ignore[arg-type]
             headless=_env_bool("WEB_AGENT_HEADLESS", True),
@@ -188,6 +207,15 @@ class Settings:
             viewport_height=_env_int("WEB_AGENT_VIEWPORT_HEIGHT", 800, 240, 2160),
             allow_private_desktop=_env_bool("WEB_AGENT_ALLOW_PRIVATE_DESKTOP", True),
             allow_loopback_desktop=_env_bool("WEB_AGENT_ALLOW_LOOPBACK_DESKTOP", False),
+            tiered_engine=_env_bool("WEB_AGENT_TIERED_ENGINE", True),
+            level3_enabled=_env_bool("WEB_AGENT_LEVEL3", True),
+            level2_enabled=_env_bool("WEB_AGENT_LEVEL2", True),
+            dual_vision_enabled=_env_bool("WEB_AGENT_DUAL_VISION", False),
+            level3_timeout_seconds=_env_float("WEB_AGENT_LEVEL3_TIMEOUT_SECONDS", 2.5, 0.2, 10.0),
+            ocr_threads=_env_int("WEB_AGENT_OCR_THREADS", 2, 1, 16),
+            min_free_memory_mb=_env_int("WEB_AGENT_MIN_FREE_MEMORY_MB", 600, 0, 65536),
+            burst_max_changed_fraction=_env_float("WEB_AGENT_BURST_MAX_CHANGED_FRACTION", 0.15, 0.01, 0.9),
+            verify_stability_seconds=_env_float("WEB_AGENT_VERIFY_STABILITY_SECONDS", 1.2, 0.0, 5.0),
             audit_dir=_env_str("WEB_AGENT_AUDIT_DIR", "./data/audit"),
             persist_screenshots=_env_bool("WEB_AGENT_PERSIST_SCREENSHOTS", False),
             evidence_dir=_env_str("WEB_AGENT_EVIDENCE_DIR", "./data/evidence"),

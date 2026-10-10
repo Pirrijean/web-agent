@@ -78,3 +78,29 @@ def test_budget_exhausted_blocks_call_before_dispatch():
     with pytest.raises(BudgetExhaustedError):
         asyncio.run(a.propose_action(request()))
     assert calls == []
+
+
+def test_dual_vision_sends_both_images_and_macro_doc_only_when_allowed():
+    from dataclasses import replace
+
+    from web_agent.models.prompting import build_action_user_text, build_verify_user_text
+    from web_agent.models.base import VerificationRequest
+
+    captured = {}
+
+    def handler(req: httpx.Request):
+        captured["body"] = json.loads(req.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"action": "wait", "duration_seconds": 1, "reasoning": "r"}'}}],
+                                         "usage": {"prompt_tokens": 900, "completion_tokens": 20}})
+
+    ad, _ = adapter(handler)
+    req = replace(request(), allow_macro=True, aux_images=((b"\xff\xd8roi", "image/jpeg"),))
+    asyncio.run(ad.propose_action(req))
+    content = captured["body"]["messages"][1]["content"]
+    images = [c for c in content if c["type"] == "image_url"]
+    assert len(images) == 2 and images[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert "MODO MACRO" in content[0]["text"]
+    assert "MODO MACRO" not in build_action_user_text(request())
+    v = build_verify_user_text(VerificationRequest(objective="o", observation_meta={}, local_hints=("OCR local leyó «Guardado»",)))
+    assert "no concluyentes" in v and "Guardado" in v
+    asyncio.run(ad.aclose())

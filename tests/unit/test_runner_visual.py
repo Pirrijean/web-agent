@@ -28,7 +28,7 @@ def make_runner(actions, verifications=(), *, audit=None, settings=None, browser
         if isinstance(s, DesktopAuthAndBootstrap):
             s.stability_timeout, s.interval = 0.3, 0.05
     runner = AgentRunner(profile, model, browser, audit or MemoryAudit(),
-                         settings=settings or Settings(model_provider="scripted"), skills=skills)
+                         settings=settings or Settings(model_provider="scripted", verify_stability_seconds=0, settle_max_seconds=0), skills=skills)
     return runner, model, browser
 
 
@@ -151,7 +151,7 @@ def test_global_deadline_is_enforced_even_if_model_hangs():
 
 def test_model_call_budget_is_enforced():
     runner, _, _ = make_runner([{"action": "wait", "duration_seconds": 0.1, "reasoning": "w"}] * 20,
-                               settings=Settings(model_provider="scripted", max_model_calls_per_task=3))
+                               settings=Settings(model_provider="scripted", max_model_calls_per_task=3, verify_stability_seconds=0, settle_max_seconds=0))
     result = run(runner)
     assert result.final_state == TaskState.FAILED and result.reason_code == "budget_exhausted"
     assert result.model_calls <= 3

@@ -41,7 +41,7 @@ class TaskCreateRequest(BaseModel):
 
     task: str = Field(..., min_length=1, max_length=MAX_OBJECTIVE_CHARS,
                       validation_alias=AliasChoices("task", "objective", "instruction", "tarea", "prompt"))
-    desktop: DesktopSpec
+    desktop: DesktopSpec = Field(..., validation_alias=AliasChoices("desktop", "escritorio"))
 
     @model_validator(mode="before")
     @classmethod
@@ -49,9 +49,10 @@ class TaskCreateRequest(BaseModel):
         # Admite también {"task": ..., "url": ..., "password": ...} o "desktop" como URL.
         if isinstance(data, dict):
             data = dict(data)
-            desktop = data.get("desktop")
+            key = "desktop" if "desktop" in data else "escritorio"
+            desktop = data.get(key)
             if isinstance(desktop, str):
-                data["desktop"] = {"url": desktop, "password": data.get("password")}
+                data[key] = {"url": desktop, "password": data.get("password")}
             elif desktop is None and ("url" in data or "desktop_url" in data):
                 data["desktop"] = {"url": data.get("url") or data.get("desktop_url"), "password": data.get("password")}
         return data
@@ -70,9 +71,12 @@ class TaskCreatedResponse(BaseModel):
 
 
 class TaskStatusResponse(BaseModel):
+    """``estado`` y ``resumen`` son el contrato del evaluador; el resto es diagnóstico."""
+
+    estado: str
+    resumen: str
     task_id: str
     status: str
-    resumen: str
     steps_executed: int
     elapsed_seconds: float
     estado_interno: str

@@ -32,6 +32,10 @@ class ModelRequest:
     guidance: tuple[str, ...] = ()
     max_output_tokens: int = 1024
     timeout_seconds: float = 60.0
+    # Motor tri-nivel: el modelo puede devolver una macro (Nivel 2) e imágenes adicionales
+    # (visión dual: ``image_bytes`` es la miniatura y ``aux_images`` el recorte ROI).
+    allow_macro: bool = False
+    aux_images: tuple[tuple[bytes, str], ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)
@@ -43,6 +47,7 @@ class VerificationRequest:
     dom_text: Optional[str] = None
     history: tuple[str, ...] = ()
     claimed_evidence: Optional[str] = None
+    local_hints: tuple[str, ...] = ()  # señales locales no confiables (p.ej. textos leídos por OCR)
     max_output_tokens: int = 512
     timeout_seconds: float = 60.0
 

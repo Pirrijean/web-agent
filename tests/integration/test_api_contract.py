@@ -44,7 +44,7 @@ def make_client(tmp_path):
     clients = []
 
     def _make(factory=None, **settings_kw):
-        settings = Settings(bearer_token=TOKEN, model_provider="scripted", worker_mode="inprocess",
+        settings = Settings(bearer_token=TOKEN, model_provider="scripted", worker_mode="inprocess", verify_stability_seconds=0, settle_max_seconds=0,
                             audit_dir=str(tmp_path / "audit"), **settings_kw)
         factory = factory or scripted_factory()
         manager = TaskManager(

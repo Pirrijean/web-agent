@@ -15,7 +15,7 @@ from web_agent.config import Settings
 from web_agent.core.deadline import Deadline
 from web_agent.core.errors import AuditUnavailableError
 from web_agent.core.result import TaskState
-from web_agent.security.origins import OriginError, parse_desktop_origin
+from web_agent.security.origins import OriginError, parse_desktop_origin, viewer_url_for_desktop
 from web_agent.security.redaction import DataRedactor
 from web_agent.service.supervisor import Supervisor
 from web_agent.service.task_store import InMemoryTaskStore, TaskRecord, TaskStore
@@ -41,6 +41,8 @@ class TaskManager:
 
     def create_task(self, objective: str, desktop_url: str, password: Optional[str]) -> TaskRecord:
         try:
+            # wss://host/websockify -> visor noVNC del mismo origen (la política se aplica al visor).
+            desktop_url = viewer_url_for_desktop(desktop_url)
             parse_desktop_origin(
                 desktop_url,
                 allow_private=self.settings.allow_private_desktop,

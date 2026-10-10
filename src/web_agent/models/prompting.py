@@ -32,8 +32,12 @@ Parámetros por acción:
 - wait: "duration_seconds" entre 0.1 y 10.
 - navigate: "url" (solo destinos autorizados).
 - click_dom / fill_dom / extract: "target_element_id" de la lista DOM (solo si hay observación DOM); fill_dom con "text" o "secret_ref".
-- done: opcional "claimed_evidence" describiendo la evidencia visible de que el objetivo está cumplido.
-- ask_human: cuando la tarea requiera una decisión que no puedes tomar con seguridad.
+- done: opcional "claimed_evidence" describiendo la evidencia visible de que el objetivo está cumplido. Si la
+  tarea es una PREGUNTA, añade "answer" SOLO con el valor pedido (si es un número, escríbelo primero y sin texto
+  antes; si pide dos datos, sepáralos con "; " en el orden preguntado), p.ej. "answer": "45".
+- ask_human: cuando la tarea sea imposible, ambigua o peligrosa. En "reasoning" nombra los datos concretos que lo
+  explican (identificadores, documentos, NIT, nombres exactos), p.ej. "Hay dos clientes Ana Torres: CC 52345678 y
+  CC 1019876543; no se modifica ninguno.". La tarea se reportará como fallida, que es lo correcto en ese caso.
 """
 
 SYSTEM_PROMPT = (
@@ -50,9 +54,36 @@ SYSTEM_PROMPT = (
     "sistema puede bloquearlas.\n"
     "6. Usa done SOLO cuando veas en la captura actual evidencia de que el objetivo está cumplido; el sistema lo "
     "verificará de forma independiente.\n"
-    "7. Si la acción anterior no tuvo efecto, no la repitas igual: elige una alternativa.\n\n"
+    "7. Si la acción anterior no tuvo efecto, no la repitas igual: elige una alternativa.\n"
+    "8. Haz SOLO lo que pide la tarea: ningún cambio adicional (cada cambio de más cuenta como acción destructiva).\n"
+    "9. Antes de crear un registro, busca si ya existe para no duplicarlo.\n"
+    "10. Si la búsqueda devuelve varios registros que encajan y la tarea no permite distinguirlos, NO modifiques "
+    "ninguno: usa ask_human nombrando los datos que los distinguen.\n"
+    "11. «Hoy», «ayer», «el sábado» se cuentan desde la fecha que muestra la aplicación, no desde tu conocimiento.\n"
+    "12. Para escribir en un campo usa type_text con x,y del campo y \"clear_before\": true (escribir sobre texto "
+    "existente lo concatena).\n"
+    "13. Tras un clic la pantalla puede tardar ~1 s en repintar; si la captura parece no haber cambiado, espera o "
+    "comprueba antes de repetir.\n"
+    "14. Antes de done, comprueba en la captura que los datos guardados son exactamente los pedidos.\n\n"
     + ACTION_SCHEMA_DOC
 )
+
+MACRO_DOC = """MODO MACRO DISPONIBLE (Nivel 2): si los próximos pasos son una secuencia predecible sobre la
+pantalla ACTUAL (p.ej. rellenar varios campos de un formulario), puedes devolver en su lugar:
+{
+  "macro_action": "<nombre_corto>",
+  "reasoning": "<justificación>",
+  "screen_summary": "<una frase sobre la pantalla actual>",
+  "previous_step_assessment": "<effect_observed | no_effect | unclear | not_applicable>",
+  "steps": [ <de 1 a 5 objetos con la MISMA forma que una acción individual, sin observation_id> ],
+  "expected_final_text": "<texto que debería verse al terminar, opcional>"
+}
+Reglas de la macro: el primer paso puede ser cualquier acción; los siguientes SOLO click_xy, double_click,
+type_text o press_key de edición/navegación (Tab, flechas, Backspace). Guardar, Enter, enviar, eliminar o
+cualquier operación persistente NO van dentro de la ráfaga: propónlas como acción individual en el turno
+siguiente. Si la pantalla puede cambiar tras un clic (menús, ventanas), usa una acción individual.
+Ante la duda, devuelve una acción individual.
+"""
 
 VERIFY_SYSTEM_PROMPT = (
     "Eres un verificador independiente. Recibes un objetivo de negocio y una captura de la pantalla actual de una "
@@ -86,7 +117,9 @@ def build_action_user_text(req: ModelRequest) -> str:
         parts.append("PROCEDIMIENTOS:\n- " + "\n- ".join(req.guidance))
     if req.dom_text:
         parts.append(req.dom_text)
-    parts.append("Devuelve ahora el JSON de la siguiente acción.")
+    if req.allow_macro:
+        parts.append(MACRO_DOC)
+    parts.append("Devuelve ahora el JSON de la siguiente acción" + (" o macro." if req.allow_macro else "."))
     return "\n\n".join(parts)
 
 
@@ -99,6 +132,9 @@ def build_verify_user_text(req: VerificationRequest) -> str:
         parts.append("ACCIONES REALIZADAS:\n" + "\n".join(req.history))
     if req.claimed_evidence:
         parts.append(f"El planificador afirma (no confiable, compruébalo en la imagen): {req.claimed_evidence}")
+    if req.local_hints:
+        parts.append("Señales locales automáticas (no concluyentes, compruébalas en la imagen):\n- "
+                     + "\n- ".join(req.local_hints))
     if req.dom_text:
         parts.append(req.dom_text)
     parts.append("Devuelve ahora el JSON de verificación.")

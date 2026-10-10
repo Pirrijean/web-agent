@@ -185,7 +185,11 @@
     e.preventDefault();
     showError("");
     if (!store.token) { toggleToken(true); showError("Introduce el token de acceso para continuar."); return; }
-    const task = $("task").value.trim();
+    let task = $("task").value.trim();
+    if (task.startsWith("{")) {
+      // Se pegó el JSON de una prueba: se envía solo su instrucción.
+      try { const j = JSON.parse(task); task = String(j.instruccion || j.tarea || j.task || task).trim(); } catch { /* texto libre */ }
+    }
     const url = $("desktopUrl").value.trim();
     const password = $("desktopPassword").value;
     if (!task) { showError("Escribe una instrucción."); $("task").focus(); return; }

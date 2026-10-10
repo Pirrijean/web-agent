@@ -46,6 +46,8 @@ class Executor:
         *,
         typing_delay_ms: int = 20,
         action_timeout_seconds: float = 15.0,
+        click_hold_ms: int = 150,
+        clear_before_default: bool = True,
     ):
         self.session = session
         self.profile = profile
@@ -53,6 +55,10 @@ class Executor:
         self.secrets = secrets
         self.typing_delay_ms = typing_delay_ms
         self.action_timeout_seconds = action_timeout_seconds
+        # Escritorios VNC reales ignoran clics con < 100 ms entre bajar y soltar el botón.
+        self.click_hold_ms = click_hold_ms
+        # Escribir sobre un campo con texto concatena: por defecto se selecciona todo antes.
+        self.clear_before_default = clear_before_default
 
     # ----------------------------------------------------------- geometría
     def _page(self):
@@ -124,7 +130,7 @@ class Executor:
         count = 2 if t == ActionType.DOUBLE_CLICK else 1
         await page.mouse.move(v.x_css, v.y_css)
         await asyncio.sleep(0.05)
-        await page.mouse.click(v.x_css, v.y_css, button=button, click_count=count)
+        await page.mouse.click(v.x_css, v.y_css, button=button, click_count=count, delay=self.click_hold_ms)
         return ExecutionOutcome(detail=f"{t.value} en ({v.x_css},{v.y_css}) css")
 
     async def _type_text(self, v: ValidatedAction, ctx: TaskContext, timeout: float) -> ExecutionOutcome:
@@ -143,17 +149,18 @@ class Executor:
         delay = self.typing_delay_ms
         if delay and len(text) * delay / 1000.0 > max(0.5, timeout - 1.0):
             delay = max(0, int((timeout - 1.0) * 1000 / max(1, len(text))))
+        clear = a.clear_before if a.clear_before is not None else (self.clear_before_default and v.x_css is not None)
         try:
             if v.x_css is not None:
-                await page.mouse.click(v.x_css, v.y_css)
-                await asyncio.sleep(0.1)
-            if a.clear_before:
+                await page.mouse.click(v.x_css, v.y_css, delay=self.click_hold_ms)
+                await asyncio.sleep(0.15)
+            if clear:
                 await page.keyboard.press("Control+a")
                 await page.keyboard.press("Backspace")
                 await asyncio.sleep(0.05)
             await page.keyboard.type(text, delay=delay)
         except BaseException:
-            if a.clear_before:
+            if clear:
                 await self._release_modifiers(page, ("Control",))
             raise
         finally:

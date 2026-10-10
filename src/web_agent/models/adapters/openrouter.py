@@ -82,7 +82,8 @@ class OpenRouterModelAdapter(BaseModelAdapter):
 
     # ------------------------------------------------------------ llamadas
     async def _call(self, system: str, user_text: str, image: Optional[bytes], mime: Optional[str],
-                    meta: dict, max_tokens: int, timeout: float) -> dict:
+                    meta: dict, max_tokens: int, timeout: float,
+                    aux_images: tuple[tuple[bytes, str], ...] = ()) -> dict:
         user_text = DataRedactor.redact_secrets_only(user_text)
         content: list[dict] = [{"type": "text", "text": user_text}]
         image_tokens = 0
@@ -90,6 +91,10 @@ class OpenRouterModelAdapter(BaseModelAdapter):
             b64 = base64.b64encode(image).decode("ascii")
             content.append({"type": "image_url", "image_url": {"url": f"data:{mime or 'image/png'};base64,{b64}"}})
             image_tokens = self._estimate_image_tokens(meta)
+        for aux, aux_mime in aux_images:
+            b64 = base64.b64encode(aux).decode("ascii")
+            content.append({"type": "image_url", "image_url": {"url": f"data:{aux_mime};base64,{b64}"}})
+            image_tokens += 258  # imágenes auxiliares pequeñas (≤ 768 px): una tesela
         est_in = (len(system) + len(user_text)) // 3 + image_tokens
         reserve_amount = self._estimate_cost(est_in, max_tokens) * Decimal("1.5")
         try:
@@ -177,6 +182,7 @@ class OpenRouterModelAdapter(BaseModelAdapter):
             request.observation_meta,
             request.max_output_tokens,
             request.timeout_seconds,
+            request.aux_images,
         )
 
     async def verify_outcome(self, request: VerificationRequest) -> dict:

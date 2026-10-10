@@ -74,6 +74,12 @@ _PERSISTENT_KEYS = frozenset({"Enter", "Control+s", "Control+p", "Alt+F4", "Dele
 _EDIT_KEYS_PREFIX = ("Backspace", "Control+a", "Control+x", "Control+v", "Control+z", "Space")
 
 
+# Alias públicos para otros componentes (p.ej. el análisis de proximidad del Nivel 3).
+fold_text = _fold
+DESTRUCTIVE_PATTERN = _DESTRUCTIVE
+PERSIST_PATTERN = _PERSIST
+
+
 def _max_risk(*levels: RiskLevel) -> RiskLevel:
     return max(levels, key=lambda r: RISK_ORDER[r])
 

@@ -196,10 +196,13 @@ Authorization: Bearer <EVALUATION_BEARER_TOKEN>
 ```
 
 #### `POST /tasks`
+Cuerpo del evaluador del reto (también se aceptan `task`/`desktop`):
 ```json
-{"task": "Abrir el módulo de clientes y exportar el informe a Excel",
- "desktop": {"url": "https://escritorio.ejemplo/vnc.html", "password": "contraseña_del_escritorio"}}
+{"tarea": "Registra al cliente Papelería Los Andes, NIT 901234567, teléfono 3157654321, ciudad Pereira.",
+ "escritorio": {"url": "wss://<escritorio>/websockify", "password": "<contraseña>"}}
 ```
+Un escritorio `wss://host/websockify` se opera a través del visor noVNC servido en la raíz del mismo
+origen; el agente lo conecta e introduce la contraseña en el visor (nunca en la URL).
 Respuesta `200`:
 ```json
 {"task_id": "task_2b2ea7a108614091837e"}
@@ -207,11 +210,13 @@ Respuesta `200`:
 
 #### `GET /tasks/{task_id}`
 ```json
-{"task_id": "task_2b2ea7a108614091837e", "status": "terminada",
- "resumen": "Informe exportado y visible en pantalla.", "steps_executed": 14, "elapsed_seconds": 41.2,
+{"estado": "terminada", "resumen": "respuesta: 45\nObjetivo completado y verificado (visual_interpreted). …",
+ "task_id": "task_2b2ea7a108614091837e", "status": "terminada", "steps_executed": 14, "elapsed_seconds": 41.2,
  "estado_interno": "succeeded_verified", "verificacion": "verificado", "posibles_efectos_sin_confirmar": false}
 ```
-`status` toma uno de: `en_curso`, `terminada`, `fallida`. Ninguna respuesta incluye la contraseña del escritorio.
+`estado` toma uno de: `en_curso`, `terminada`, `fallida` (`status` es un alias). En una pregunta, la
+primera línea del resumen es `respuesta: <valor>`; una tarea imposible o ambigua se reporta `fallida`
+nombrando los datos que lo explican. Ninguna respuesta incluye la contraseña ni otros secretos.
 
 ---
 
@@ -254,12 +259,39 @@ uv run python main.py inspect-profile profiles/examples/portal_demo.yaml
 
 ---
 
+## 🧭 Motor tri-nivel
+
+El bucle combina tres niveles que comparten validación, política R0–R3, ejecutor y auditoría
+(detalle y mediciones en [`ADR-012`](./Diseño/decisiones/ADR-012-motor-tri-nivel.md)):
+
+- **Nivel 3 (local, sin inferencia):** si el objetivo pide pulsar un texto literal (`haz clic en 'Clientes'`),
+  OCR dirigido lo localiza y se hace clic solo si es R0, no ambiguo y sin términos peligrosos a ≤ 80 px.
+  Requiere el extra `ocr` (`uv sync --extra ocr`; incluido en la imagen Docker).
+- **Nivel 2 (macro-acciones):** el modelo puede devolver hasta 5 pasos sobre la misma pantalla
+  (p.ej. rellenar un formulario); tras el primero solo se admiten pasos ≤ R1 y la ráfaga se corta si la
+  pantalla cambia de forma inesperada.
+- **Nivel 1 (clásico):** una acción por turno; es el fallback de todo.
+
+Adaptaciones al escritorio del reto: clic sostenido 150 ms (los de < 100 ms se ignoran), espera de
+repintado tras cada acción (hasta 1,5 s) y selección del contenido antes de escribir en un campo.
+
 ## 🧪 Pruebas Automatizadas y Calidad
 
 ```bash
 uv run pytest
 uv run ruff check src tests --select E9,F,B --ignore B008,B904,E402
 ```
+### Pruebas de práctica del reto contra el escritorio real
+```bash
+# credenciales en .env.pruebas (ignorado por git):
+#   DESKTOP_BASE_URL, DESKTOP_PASSWORD, DESKTOP_ADMIN_TOKEN, TEAM_TOKEN
+uv run python main.py serve                       # con OPENROUTER_API_KEY configurada
+uv run python scripts/run_pruebas.py              # E1–E5: /__reset → tarea → sondeo 5 s → /__check
+uv run python scripts/run_pruebas.py --only E3 --agent-url https://<agente-desplegado>
+```
+Puntúa como el evaluador: cambios en la app (`/__check`), `estado`, línea `respuesta:`, datos clave en
+las tareas fallidas y ausencia de secretos. Informe en `data/pruebas/report.json`.
+
 La suite cubre contrato REST, consola, supervisor y deadline, validación contextual, política R0–R3, red/WebSockets, redacción de secretos, presupuestos y escenarios con Chromium real. La integración continua (`.github/workflows/ci.yml`) ejecuta pruebas, linter y construcción de la imagen en cada PR.
 
 ---

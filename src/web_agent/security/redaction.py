@@ -78,6 +78,21 @@ class DataRedactor:
             cls._literal_secrets.discard(value)
 
     @classmethod
+    def redact_for_report(cls, text: str) -> str:
+        """Resumen público de la tarea: secretos literales y credenciales, NO datos de negocio.
+
+        El resumen tiene que poder traer correos, NIT, teléfonos o documentos (p.ej. una
+        respuesta o los datos que explican un fallo); lo que nunca puede traer es la
+        contraseña del escritorio ni tokens/claves.
+        """
+        text = cls.redact_secrets_only(text)
+        if not text:
+            return text
+        for pattern, repl in cls._PATTERNS[:-3]:  # sin correo, IBAN ni números largos
+            text = pattern.sub(repl, text)
+        return text
+
+    @classmethod
     def redact_secrets_only(cls, text: str) -> str:
         """Redacta solo secretos literales registrados.
 

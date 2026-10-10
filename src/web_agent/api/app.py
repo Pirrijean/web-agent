@@ -127,6 +127,7 @@ def create_app(settings: Optional[Settings] = None, task_manager: Optional[TaskM
         if record is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada.")
         return TaskStatusResponse(
+            estado=record.public_status,
             task_id=record.task_id,
             status=record.public_status,
             resumen=record.summary,
