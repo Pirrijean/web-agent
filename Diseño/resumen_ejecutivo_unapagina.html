@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resumen Ejecutivo — WEB-AGENT</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 8mm;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 8.5pt;
+      line-height: 1.35;
+      color: #0f172a;
+      background: #ffffff;
+      width: 100%;
+      height: 100%;
+    }
+    .header {
+      border-bottom: 2px solid #2563eb;
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .header h1 {
+      font-size: 15pt;
+      font-weight: 800;
+      color: #1e3a8a;
+      letter-spacing: -0.5px;
+    }
+    .header .subtitle {
+      font-size: 8pt;
+      font-weight: 600;
+      color: #475569;
+    }
+    .header .badge {
+      font-size: 7.5pt;
+      font-weight: 700;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .intro {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 3px solid #2563eb;
+      padding: 5px 8px;
+      border-radius: 3px;
+      margin-bottom: 6px;
+      font-size: 8pt;
+      color: #334155;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .card {
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 6px 8px;
+      background: #ffffff;
+    }
+    .card-title {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 3px;
+    }
+    .card-title span.icon {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      background: #2563eb;
+      border-radius: 50%;
+    }
+    .arch-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .arch-box {
+      border: 1px solid #cbd5e1;
+      border-radius: 3px;
+      padding: 4px 6px;
+      background: #f8fafc;
+    }
+    .arch-box.c1 { border-left: 3px solid #3b82f6; }
+    .arch-box.c2 { border-left: 3px solid #8b5cf6; }
+    .arch-box.c3 { border-left: 3px solid #10b981; }
+    .arch-box-title {
+      font-weight: 700;
+      font-size: 7.5pt;
+      color: #0f172a;
+      display: flex;
+      justify-content: space-between;
+    }
+    .arch-box-content {
+      font-size: 7pt;
+      color: #475569;
+      margin-top: 1px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7pt;
+    }
+    th, td {
+      padding: 3px 5px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    th {
+      background: #f1f5f9;
+      font-weight: 700;
+      color: #334155;
+    }
+    td.domain {
+      font-weight: 600;
+      color: #1e293b;
+      white-space: nowrap;
+    }
+    .tag {
+      display: inline-block;
+      padding: 1px 4px;
+      font-size: 6.5pt;
+      font-weight: 600;
+      border-radius: 2px;
+      background: #e2e8f0;
+      color: #334155;
+    }
+    .tag-blue { background: #dbeafe; color: #1e40af; }
+    .tag-green { background: #d1fae5; color: #065f46; }
+    .tag-purple { background: #ede9fe; color: #5b21b6; }
+    .tag-red { background: #fee2e2; color: #991b1b; }
+    .lifecycle {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      margin-top: 4px;
+    }
+    .step-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 3px;
+      padding: 4px;
+      background: #f8fafc;
+      font-size: 6.8pt;
+    }
+    .step-box-num {
+      font-weight: 800;
+      color: #2563eb;
+      font-size: 7.5pt;
+    }
+    .step-box-title {
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 1px;
+    }
+    .footer {
+      border-top: 1px solid #e2e8f0;
+      padding-top: 3px;
+      margin-top: 5px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 6.8pt;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1>WEB-AGENT — RESUMEN EJECUTIVO DE ARQUITECTURA</h1>
+      <div class="subtitle">Automatización Autónoma de Sistemas Heredados (Nivel 5 GUI Canvas) sin API ni Documentación</div>
+    </div>
+    <div class="badge">VERSIÓN 1.0-NORMATIVO · RETO 2026</div>
+  </div>
+
+  <div class="intro">
+    <strong>Objetivo Central:</strong> Operar sistemas empresariales históricos sin API, documentación ni soporte activo, interactuando por pantalla (canvas noVNC/Playwright) mediante lenguaje natural en entornos desconocidos. <strong>Restricción Absoluta:</strong> Cero frameworks de agentes de terceros (LangChain, AutoGen, CrewAI, Browser-Use, etc.); arquitectura determinista y verificable construida 100% de forma nativa.
+  </div>
+
+  <div class="grid-2">
+    <!-- Arquitectura de 3 Capas -->
+    <div class="card">
+      <div class="card-title"><span class="icon"></span> Arquitectura de Aislamiento en 3 Capas</div>
+      <div class="arch-flow">
+        <div class="arch-box c1">
+          <div class="arch-box-title">
+            <span>Capa 1: Entrypoint REST ASGI (FastAPI + Bearer Token)</span>
+            <span class="tag tag-blue">&lt; 2.0 s</span>
+          </div>
+          <div class="arch-box-content">
+            • <code>GET /health</code>: 200 OK determinista sin invocar LLM ni navegador.<br>
+            • <code>POST /tasks</code>: Valida DTO, genera <code>task_id</code> y encola en background.<br>
+            • <code>GET /tasks/{id}</code>: Estados: <code>en_curso</code>, <code>terminada</code>, <code>fallida</code> + resumen.
+          </div>
+        </div>
+
+        <div class="arch-box c2">
+          <div class="arch-box-title">
+            <span>Capa 2: Supervisor de Procesos & Presupuestos</span>
+            <span class="tag tag-purple">300 s Máx</span>
+          </div>
+          <div class="arch-box-content">
+            • Aislamiento por subproceso (<code>multiprocessing spawn</code>) por tarea.<br>
+            • Límite monotónico duro de 300 s; cancela y libera recursos sin fugas.<br>
+            • Control presupuestario en tiempo real: tope de USD, tokens y 200 pasos.
+          </div>
+        </div>
+
+        <div class="arch-box c3">
+          <div class="arch-box-title">
+            <span>Capa 3: Runtime del Núcleo & Muro de Políticas</span>
+            <span class="tag tag-green">Fail-Closed</span>
+          </div>
+          <div class="arch-box-content">
+            • <strong>Percepción:</strong> VisualObserver (0..1000 norm a CSS px) + SHA-256.<br>
+            • <strong>Políticas:</strong> Clasificación R0-R3; R3 bloquea ante ausencia de humano.<br>
+            • <strong>Ejecución:</strong> Playwright nativo; allowlist estricto de WebSockets.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seguridad y Modelo de Amenazas -->
+    <div class="card">
+      <div class="card-title"><span class="icon"></span> Muros de Seguridad & Defensa en Profundidad</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Control</th>
+            <th>Implementación Técnica</th>
+            <th>Garantía</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="domain">Red & SSRF</td>
+            <td>NetworkPolicyValidator + DNS pre-resolve</td>
+            <td>Bloquea metadata, loopback y redes privadas.</td>
+          </tr>
+          <tr>
+            <td class="domain">noVNC Canvas</td>
+            <td>Allowlist granular de WebSocket (ws/wss)</td>
+            <td>Tráfico WS permitido <em>únicamente</em> al escritorio.</td>
+          </tr>
+          <tr>
+            <td class="domain">Secretos</td>
+            <td>SecretStore + DataRedactor</td>
+            <td>Claves inyectadas a nivel SO; <strong>nunca</strong> van al LLM ni logs.</td>
+          </tr>
+          <tr>
+            <td class="domain">Políticas R0-R3</td>
+            <td>SecurityPolicyEnforcer (Fail-Closed)</td>
+            <td>Sin permiso explícito no hay clic ni navegación.</td>
+          </tr>
+          <tr>
+            <td class="domain">Auditoría</td>
+            <td>AuditLogger con Hash SHA-256</td>
+            <td>Trazabilidad inmutable de cada decisión y acción.</td>
+          </tr>
+          <tr>
+            <td class="domain">Verificación</td>
+            <td>Verifier con doble postcondición</td>
+            <td>DONE rechazado si no hay evidencia confirmada.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Ciclo de Vida -->
+  <div class="card" style="margin-bottom: 6px;">
+    <div class="card-title"><span class="icon"></span> Ciclo de Ejecución de Tarea Autónomo</div>
+    <div class="lifecycle">
+      <div class="step-box">
+        <div class="step-box-num">1</div>
+        <div class="step-box-title">Recepción & Encolado</div>
+        Validación Pydantic, cálculo de hash, registro inicial y respuesta HTTP en &lt; 2 s con <code>task_id</code>.
+      </div>
+      <div class="step-box">
+        <div class="step-box-num">2</div>
+        <div class="step-box-title">Bootstrap noVNC</div>
+        Navegación al escritorio, inyección segura de credencial y espera activa hasta estabilidad del canvas.
+      </div>
+      <div class="step-box">
+        <div class="step-box-num">3</div>
+        <div class="step-box-title">Bucle de Ejecución</div>
+        Observación visual (1000x1000) → Inferencia estructurada → Filtro de seguridad → Despacho Playwright.
+      </div>
+      <div class="step-box">
+        <div class="step-box-num">4</div>
+        <div class="step-box-title">Verificación & Cierre</div>
+        Comprobación independiente de efectos antes de emitir resultado. Limpieza forzada de procesos.
+      </div>
+    </div>
+  </div>
+
+  <!-- Métricas y Contratos -->
+  <div class="grid-2" style="margin-bottom: 0;">
+    <div class="card">
+      <div class="card-title"><span class="icon"></span> Contrato de la API de Evaluación</div>
+      <div style="font-size: 7.2pt; color: #334155;">
+        • <strong>Autenticación:</strong> <code>Authorization: Bearer &lt;token&gt;</code> en todos los endpoints.<br>
+        • <strong>Payload POST:</strong> <code>{"task": "...", "desktop": {"url": "...", "password": "..."}}</code>.<br>
+        • <strong>Payload GET:</strong> <code>{"task_id": "...", "status": "en_curso|terminada|fallida", "resumen": "..."}</code>.<br>
+        • <strong>Resiliencia:</strong> Acepta alias comunes (<code>tarea</code>, <code>instruction</code>, <code>contrasena</code>).
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="icon"></span> Compromisos Técnicos y SLA</div>
+      <div style="font-size: 7.2pt; color: #334155;">
+        • <strong>Tiempo de Respuesta POST:</strong> &lt; 2.0 s garantizado.<br>
+        • <strong>Tiempo Máximo de Tarea:</strong> 300 s (5 minutos) con corte forzado.<br>
+        • <strong>Disponibilidad:</strong> Servicio contenerizado accesible desde las 20:00 al fin del Demo Day.<br>
+        • <strong>Cobertura de Tests:</strong> 93 tests automatizados unitarios, de seguridad e integración.
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>WEB-AGENT · Arquitectura e Implementación Normativa</span>
+    <span>Confidencial · Demo Day Retos 2026</span>
+    <span>Documento de Diseño: 1 Página Exacta</span>
+  </div>
+
+</body>
+</html>

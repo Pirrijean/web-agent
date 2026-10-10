@@ -1,0 +1,231 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 960" width="100%" height="100%" style="background:#0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+    <linearGradient id="apiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#334155" />
+    </linearGradient>
+    <linearGradient id="runnerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#312e81" />
+    </linearGradient>
+    <linearGradient id="visGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#701a75" />
+      <stop offset="100%" stop-color="#a21caf" />
+    </linearGradient>
+    <linearGradient id="domGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064e3b" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+    <linearGradient id="modelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c4a6e" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="polGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7f1d1d" />
+      <stop offset="100%" stop-color="#b91c1c" />
+    </linearGradient>
+    <linearGradient id="skillGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#854d0e" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <linearGradient id="execGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#134e4a" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+    
+    <!-- Markers -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#38bdf8" />
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#f472b6" />
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#34d399" />
+    </marker>
+    <marker id="arrow-yellow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#fbbf24" />
+    </marker>
+    <marker id="arrow-gray" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#94a3b8" />
+    </marker>
+
+    <!-- Filter -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Banner Superior -->
+  <rect x="40" y="20" width="1120" height="65" rx="8" fill="url(#headerGrad)" filter="url(#shadow)" />
+  <text x="60" y="52" fill="#ffffff" font-size="20" font-weight="800" letter-spacing="0.5">WEB-AGENT — ARQUITECTURA DE SISTEMA GENERALISTA</text>
+  <text x="60" y="72" fill="#e0e7ff" font-size="12" font-weight="500">Operación Autónoma por Pantalla | Visión como Modo Principal · DOM Opcional | Supervisor con Deadline 300 s</text>
+  <rect x="990" y="37" width="150" height="30" rx="15" fill="#0f172a" />
+  <text x="1065" y="56" fill="#38bdf8" font-size="11" font-weight="700" text-anchor="middle">FASE: SYSTEMS DESIGN</text>
+
+  <!-- CAPA 1: EVALUADOR Y SERVICIO REST ENTRYPOINT -->
+  <!-- Evaluador Box -->
+  <g transform="translate(60, 105)">
+    <rect width="320" height="85" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5" filter="url(#shadow)" />
+    <text x="16" y="26" fill="#38bdf8" font-size="13" font-weight="800">EVALUADOR OFICIAL (HACKATHON)</text>
+    <text x="16" y="46" fill="#cbd5e1" font-size="11">• Autenticación: <tspan fill="#facc15" font-weight="700">Authorization: Bearer &lt;token&gt;</tspan></text>
+    <text x="16" y="63" fill="#cbd5e1" font-size="11">• Envía: tarea LN + desktop (url, password)</text>
+    <text x="16" y="80" fill="#94a3b8" font-size="10">• Evalúa 5 sistemas legacy sin API por pantalla</text>
+  </g>
+
+  <!-- API REST Propia Box -->
+  <g transform="translate(440, 105)">
+    <rect width="350" height="85" rx="8" fill="url(#apiGrad)" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)" />
+    <text x="16" y="26" fill="#ffffff" font-size="13" font-weight="800">API REST PROPIA (Entrypoint Desplegado)</text>
+    <text x="16" y="46" fill="#cbd5e1" font-size="11"><tspan fill="#34d399" font-weight="700">GET /health</tspan> ➔ 200 OK (Listo para evaluar)</text>
+    <text x="16" y="63" fill="#cbd5e1" font-size="11"><tspan fill="#60a5fa" font-weight="700">POST /tasks</tspan> ➔ Responde <tspan fill="#f59e0b" font-weight="700">&lt; 2s</tspan> con {task_id}</text>
+    <text x="16" y="80" fill="#cbd5e1" font-size="11"><tspan fill="#c084fc" font-weight="700">GET /tasks/{id}</tspan> ➔ en_curso, terminada, fallida</text>
+  </g>
+
+  <!-- STORE Box -->
+  <g transform="translate(850, 105)">
+    <rect width="290" height="85" rx="8" fill="#1e293b" stroke="#64748b" stroke-width="1.5" filter="url(#shadow)" />
+    <text x="16" y="26" fill="#f8fafc" font-size="13" font-weight="800">REGISTRO DE TAREAS Y ESTADOS</text>
+    <text x="16" y="46" fill="#cbd5e1" font-size="11">• Almacén de estados de tarea en memoria</text>
+    <text x="16" y="63" fill="#cbd5e1" font-size="11">• Registro inmediato de deadline monotónico</text>
+    <text x="16" y="80" fill="#cbd5e1" font-size="11">• Consulta inmediata sin bloquear el runner</text>
+  </g>
+
+  <!-- Flechas Capa 1 -->
+  <path d="M 380 147 L 435 147" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+  <path d="M 790 147 L 845 147" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Supervisor Box -->
+  <g transform="translate(440, 215)">
+    <rect width="350" height="55" rx="8" fill="#1e1b4b" stroke="#818cf8" stroke-width="1.5" filter="url(#shadow)" />
+    <text x="175" y="26" fill="#c7d2fe" font-size="13" font-weight="800" text-anchor="middle">SUPERVISOR ASÍNCRONO</text>
+    <text x="175" y="44" fill="#a5b4fc" font-size="11" text-anchor="middle">Deadline estricto: 300 s (5 min) · Cancelación limpia de sesión</text>
+  </g>
+
+  <path d="M 615 190 L 615 210" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+  <path d="M 615 270 L 615 295" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- CAPA 2: AGENT RUNNER -->
+  <g transform="translate(250, 300)">
+    <rect width="720" height="55" rx="8" fill="url(#runnerGrad)" stroke="#6366f1" stroke-width="2" filter="url(#shadow)" />
+    <text x="360" y="26" fill="#ffffff" font-size="14" font-weight="800" text-anchor="middle">AGENT RUNNER (Núcleo Determinista)</text>
+    <text x="360" y="44" fill="#c7d2fe" font-size="11" text-anchor="middle">Bucle de Control: Observar ➔ Proponer ➔ Validar ➔ Ejecutar ➔ Verificar ➔ Auditar</text>
+  </g>
+
+  <!-- CAPA 3: PERCEPCIÓN DUAL (OBSERVAR) -->
+  <path d="M 610 355 L 610 375" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- VisualObserver Box (Modo Principal) -->
+  <g transform="translate(60, 385)">
+    <rect width="520" height="110" rx="8" fill="url(#visGrad)" stroke="#e879f9" stroke-width="2.5" filter="url(#shadow)" />
+    <rect x="400" y="10" width="110" height="18" rx="9" fill="#f43f5e" />
+    <text x="455" y="23" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle">MODO PRINCIPAL</text>
+    <text x="16" y="26" fill="#ffffff" font-size="13" font-weight="800">VISUAL OBSERVER (NIVEL 5 — SIN DOM / CANVAS)</text>
+    <text x="16" y="46" fill="#fdf4ff" font-size="11">• Captura Viewport en tiempo real (<tspan font-family="monospace">page.screenshot()</tspan>)</text>
+    <text x="16" y="63" fill="#fdf4ff" font-size="11">• Genera <tspan font-family="monospace">observation_id</tspan> obligatorio con geometría CSS W x H</text>
+    <text x="16" y="80" fill="#fdf4ff" font-size="11">• Coordenadas normalizadas [0..1000] ➔ Píxeles CSS <tspan font-family="monospace">0 ≤ X &lt; W, 0 ≤ Y &lt; H</tspan></text>
+    <text x="16" y="97" fill="#f5d0fe" font-size="10">• Configuración <tspan font-family="monospace">visual_only</tspan>: no inspecciona DOM para controles</text>
+  </g>
+
+  <!-- DOMObserver Box (Modo Opcional) -->
+  <g transform="translate(620, 385)">
+    <rect width="520" height="110" rx="8" fill="url(#domGrad)" stroke="#10b981" stroke-width="1.5" filter="url(#shadow)" />
+    <rect x="400" y="10" width="110" height="18" rx="9" fill="#047857" />
+    <text x="455" y="23" fill="#ffffff" font-size="9" font-weight="700" text-anchor="middle">MODO OPCIONAL</text>
+    <text x="16" y="26" fill="#ffffff" font-size="13" font-weight="800">DOM OBSERVER (WEB CONVENCIONAL)</text>
+    <text x="16" y="46" fill="#ecfdf5" font-size="11">• Árbol de accesibilidad y roles semánticos (button, textbox)</text>
+    <text x="16" y="63" fill="#ecfdf5" font-size="11">• Identificadores temporales e0..e30 con censura de contraseñas</text>
+    <text x="16" y="80" fill="#ecfdf5" font-size="11">• Localizadores estructurados contextuales (forms, tables, dialogs)</text>
+    <text x="16" y="97" fill="#6ee7b7" font-size="10">• Activo solo si las reglas del reto permiten inspección de HTML</text>
+  </g>
+
+  <!-- Conectores a Adaptador LLM/VLM -->
+  <path d="M 320 495 L 320 520 L 520 520 L 520 535" stroke="#f472b6" stroke-width="2" marker-end="url(#arrow-pink)" />
+  <path d="M 880 495 L 880 520 L 680 520 L 680 535" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)" />
+
+  <!-- CAPA 4: ADAPTADOR LLM / VLM -->
+  <g transform="translate(420, 540)">
+    <rect width="360" height="70" rx="8" fill="url(#modelGrad)" stroke="#0284c7" stroke-width="2" filter="url(#shadow)" />
+    <text x="180" y="26" fill="#ffffff" font-size="13" font-weight="800" text-anchor="middle">ADAPTADOR LLM / VLM (Inferencia de Propuestas)</text>
+    <text x="180" y="45" fill="#e0f2fe" font-size="11" text-anchor="middle">Recibe: (TaskContext, Observation) · Emite: ProposedAction</text>
+    <text x="180" y="62" fill="#bae6fd" font-size="10" text-anchor="middle">Inferencia externa condicionada a reglas · Presupuesto con reserva</text>
+  </g>
+
+  <!-- Conector a Validación de Políticas -->
+  <path d="M 600 610 L 600 635" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- CAPA 5: POLÍTICAS, SKILLS Y EJECUCIÓN -->
+  <!-- Validador de Políticas -->
+  <g transform="translate(60, 640)">
+    <rect width="320" height="120" rx="8" fill="url(#polGrad)" stroke="#f87171" stroke-width="1.5" filter="url(#shadow)" />
+    <text x="16" y="24" fill="#ffffff" font-size="12" font-weight="800">VALIDAR CONTRATO Y PERMISOS</text>
+    <text x="16" y="44" fill="#fee2e2" font-size="10">• <tspan font-weight="700">observation_id vigente:</tspan> rechazo ante obsolescencia</text>
+    <text x="16" y="60" fill="#fee2e2" font-size="10">• <tspan font-weight="700">Límites de Viewport:</tspan> 0 ≤ X_css &lt; W_css, 0 ≤ Y_css &lt; H_css</text>
+    <text x="16" y="76" fill="#fee2e2" font-size="10">• <tspan font-weight="700">Clasificación Riesgo:</tspan> R0..R2 en ámbito; R3 bloqueado</text>
+    <text x="16" y="92" fill="#fee2e2" font-size="10">• <tspan font-weight="700">Fail-Closed:</tspan> aborto ante acción desconocida</text>
+    <text x="16" y="108" fill="#fca5a5" font-size="9">• La propuesta del modelo es entrada NO CONFIABLE</text>
+  </g>
+
+  <!-- Skills Nativas Acotadas -->
+  <g transform="translate(430, 640)">
+    <rect width="340" height="120" rx="8" fill="url(#skillGrad)" stroke="#f59e0b" stroke-width="1.5" filter="url(#shadow)" />
+    <text x="16" y="24" fill="#ffffff" font-size="12" font-weight="800">SKILLS NATIVAS ACOTADAS (Sin MCP/Ext)</text>
+    <text x="16" y="44" fill="#fef3c7" font-size="10">• <tspan font-weight="700">DesktopAuth:</tspan> login resolviendo contraseña sin prompt</text>
+    <text x="16" y="60" fill="#fef3c7" font-size="10">• <tspan font-weight="700">CanvasFormFill:</tspan> foco, Ctrl+A, Del, delay, Tab</text>
+    <text x="16" y="76" fill="#fef3c7" font-size="10">• <tspan font-weight="700">LegacyPopupManager:</tspan> lectura de modal, no Enter ciego</text>
+    <text x="16" y="92" fill="#fef3c7" font-size="10">• <tspan font-weight="700">ReportExportTracker:</tspan> menús de archivo y guardado</text>
+    <text x="16" y="108" fill="#fcd34d" font-size="9">• Procedimientos propios en código; sin agentes externos</text>
+  </g>
+
+  <!-- Ejecutor Determinista -->
+  <g transform="translate(820, 640)">
+    <rect width="320" height="120" rx="8" fill="url(#execGrad)" stroke="#14b8a6" stroke-width="1.5" filter="url(#shadow)" />
+    <text x="16" y="24" fill="#ffffff" font-size="12" font-weight="800">EJECUTOR DETERMINISTA (Playwright)</text>
+    <text x="16" y="44" fill="#ccfbf1" font-size="10">• <tspan font-weight="700">mouse.click(X_css, Y_css):</tspan> eventos de puntero</text>
+    <text x="16" y="60" fill="#ccfbf1" font-size="10">• <tspan font-weight="700">keyboard.type / press:</tspan> secuencias de teclas</text>
+    <text x="16" y="76" fill="#ccfbf1" font-size="10">• <tspan font-weight="700">Política de Red (NET):</tspan> WebSockets autorizados para</text>
+    <text x="16" y="92" fill="#ccfbf1" font-size="10">  el escritorio remoto; bloqueo total de SSRF externo</text>
+    <text x="16" y="108" fill="#5eead4" font-size="9">• Entorno aislado con cierre garantizado de recursos</text>
+  </g>
+
+  <!-- Flechas entre Políticas, Skills y Ejecutor -->
+  <path d="M 380 700 L 425 700" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+  <path d="M 770 700 L 815 700" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Conector de Ejecutor a Verificación -->
+  <path d="M 980 760 L 980 790 L 610 790 L 610 805" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- CAPA 6: VERIFICACIÓN Y RECUPERACIÓN BASADA EN EVIDENCIA -->
+  <g transform="translate(180, 810)">
+    <rect width="840" height="70" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" filter="url(#shadow)" />
+    <text x="420" y="24" fill="#38bdf8" font-size="13" font-weight="800" text-anchor="middle">NUEVA OBSERVACIÓN Y VERIFICACIÓN BASADA EN EVIDENCIA</text>
+    <text x="420" y="42" fill="#cbd5e1" font-size="11" text-anchor="middle">La diferencia visual es señal de diagnóstico, no prueba de éxito · Finalización requiere evidencia vinculada al objetivo</text>
+    <text x="420" y="58" fill="#94a3b8" font-size="10" text-anchor="middle">Si el resultado es incierto o requiere recuperación: reobservar ➔ clasificar ➔ replantear sin bucles ciegos</text>
+  </g>
+
+  <!-- Rutas de Verificación: Continuar / Recuperación / Resultado Final -->
+  <!-- Continuar hacia Observar -->
+  <path d="M 180 845 L 30 845 L 30 440 L 55 440" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrow)" />
+  <text x="25" y="650" fill="#38bdf8" font-size="9" font-weight="700" transform="rotate(-90 25 650)">Continuar (siguiente paso)</text>
+
+  <!-- Recuperación Segura -->
+  <path d="M 600 880 L 600 905 L 1150 905 L 1150 440 L 1145 440" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrow-yellow)" />
+  <text x="1155" y="670" fill="#fbbf24" font-size="9" font-weight="700" transform="rotate(90 1155 670)">Recuperación Segura</text>
+
+  <!-- Resultado Final hacia STORE -->
+  <path d="M 1020 845 L 1170 845 L 1170 147 L 1145 147" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)" />
+  <text x="1175" y="500" fill="#34d399" font-size="9" font-weight="700" transform="rotate(90 1175 500)">Resultado Final (terminada / fallida)</text>
+
+  <!-- Pie: Auditoría Redactada -->
+  <g transform="translate(60, 895)">
+    <rect width="1080" height="45" rx="6" fill="#0f172a" stroke="#334155" stroke-width="1" />
+    <text x="20" y="27" fill="#94a3b8" font-size="11">
+      <tspan fill="#e2e8f0" font-weight="700">AUDITORÍA REDACTADA (JSONL append-only):</tspan> Registra eventos, timestamps y estados sin guardar contraseñas ni tokens · Detención fail-stop si falla la persistencia.
+    </text>
+  </g>
+</svg>
