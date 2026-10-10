@@ -39,20 +39,36 @@ class SecureBrowserSession:
 
             # Aislamiento: Nuevo contexto, cero descargas por defecto para mitigar malware.
             # Desactivamos service_workers porque pueden saltarse intercepciones
-            self._context = await self._browser.new_context(
-                accept_downloads=False,
-                ignore_https_errors=False,
-                service_workers="block",
-            )
+            context_kwargs = {
+                "accept_downloads": False,
+                "ignore_https_errors": False,
+                "service_workers": "block",
+            }
+            if self.network_validator.proxy_options:
+                context_kwargs["proxy"] = self.network_validator.proxy_options
+
+            self._context = await self._browser.new_context(**context_kwargs)
 
             # Intercept and block unauthorized requests at the browser level
             async def route_handler(route):
-                if self.network_validator.is_url_allowed(route.request.url):
-                    await route.continue_()
-                else:
+                req = route.request
+                if req.resource_type == "websocket":
+                    await route.abort("blockedbyclient")
+                    return
+                try:
+                    if await self.network_validator.is_request_allowed(req.url):
+                        await route.continue_()
+                    else:
+                        await route.abort("blockedbyclient")
+                except Exception:
                     await route.abort("blockedbyclient")
 
             await self._context.route("**/*", route_handler)
+            if hasattr(self._context, "route_web_socket"):
+                try:
+                    await self._context.route_web_socket("**/*", lambda ws: ws.close())
+                except Exception:
+                    pass
             self.page = await self._context.new_page()
         except BaseException:
             await self.stop()

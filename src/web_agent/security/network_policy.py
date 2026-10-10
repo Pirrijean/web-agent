@@ -65,7 +65,14 @@ class NetworkPolicyValidator:
                 address = ipaddress.ip_address(sockaddr[0].split("%", 1)[0])
             except ValueError:
                 return False
-            if not address.is_global or address.is_multicast:
+            if (
+                not address.is_global
+                or address.is_multicast
+                or address.is_loopback
+                or address.is_private
+                or address.is_reserved
+                or address.is_link_local
+            ):
                 return False
         return True
 

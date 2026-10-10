@@ -3,7 +3,7 @@ import json
 import os
 import uuid
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from playwright.async_api import async_playwright, expect
 
 from web_agent.core.errors import PolicyViolationError
@@ -11,8 +11,8 @@ from web_agent.core.policy import SecurityPolicyEnforcer
 from web_agent.core.schemas import ActionType, ProposedAction, load_profile
 from web_agent.security.redaction import DataRedactor
 
-mcp = FastMCP("restricted-browser")
-CONFIG = os.environ.get("FRONTIER_CONFIG", "profiles/portal_demo_v1.yaml")
+mcp = MCPServer("restricted-browser")
+CONFIG = os.environ.get("FRONTIER_CONFIG", "profiles/examples/portal_demo.yaml")
 
 
 class RestrictedBrowser:

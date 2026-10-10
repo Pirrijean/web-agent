@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from web_agent.browser.session import SecureBrowserSession
 from web_agent.core.runner import AgentRunner
 from web_agent.core.schemas import load_profile
 from web_agent.doctor import run_doctor
+from web_agent.models.adapters.openrouter import OpenRouterModelAdapter
 from web_agent.models.adapters.scripted import ScriptedModelAdapter
 
 
@@ -28,13 +30,15 @@ def parse_args():
     run_parser = subparsers.add_parser("run", help="Ejecuta una tarea del agente con un perfil específico")
     run_parser.add_argument("--profile", "-p", type=str, default="profiles/examples/portal_demo.yaml", help="Ruta al perfil")
     run_parser.add_argument("--objective", "-o", type=str, default="Comprobar acceso y navegación autorizada", help="Objetivo")
+    run_parser.add_argument("--adapter", "-a", choices=["scripted", "openrouter"], default="scripted", help="Adaptador de modelo (scripted o openrouter)")
+    run_parser.add_argument("--model", "-m", type=str, default="google/gemini-2.0-flash-001", help="Nombre del modelo si se usa OpenRouter")
     run_parser.add_argument("--headless", action="store_true", default=True, help="Ejecutar en modo headless")
     run_parser.add_argument("--no-headless", action="store_false", dest="headless", help="Ejecutar mostrando la ventana del navegador")
 
     return parser.parse_args()
 
 
-async def execute_run(profile_path: str, objective: str, headless: bool):
+async def execute_run(profile_path: str, objective: str, headless: bool, adapter_name: str = "scripted", model_name: str = "google/gemini-2.0-flash-001"):
     p = Path(profile_path)
     if not p.exists():
         print(f"Error: Perfil '{profile_path}' no encontrado.")
@@ -44,13 +48,21 @@ async def execute_run(profile_path: str, objective: str, headless: bool):
     print(f"[*] Perfil cargado: {profile.id} (v{profile.version})")
     print(f"[*] Orígenes permitidos: {', '.join(profile.security.allowed_origins)}")
     print(f"[*] Objetivo: {objective}")
+    print(f"[*] Adaptador: {adapter_name}" + (f" ({model_name})" if adapter_name == "openrouter" else ""))
 
     browser = SecureBrowserSession(
         headless=headless,
         chromium_sandbox=profile.browser.chromium_sandbox,
     )
-    # Por defecto en desarrollo local usamos el adaptador seguro scripted si no hay API externa
-    model = ScriptedModelAdapter()
+
+    if adapter_name == "openrouter":
+        if not os.environ.get("OPENROUTER_API_KEY"):
+            print("Error: OPENROUTER_API_KEY no configurada para el adaptador OpenRouter.")
+            return 1
+        model = OpenRouterModelAdapter(model_name=model_name)
+    else:
+        model = ScriptedModelAdapter()
+
     runner = AgentRunner(profile=profile, model=model, browser=browser)
 
     print("[*] Iniciando ciclo de ejecución...")
@@ -79,7 +91,15 @@ def main():
         print(f"Permisos: navegación={profile.permissions.navigation}, forms={profile.permissions.fill_forms}")
         sys.exit(0)
     elif args.command == "run":
-        exit_code = asyncio.run(execute_run(args.profile, args.objective, args.headless))
+        exit_code = asyncio.run(
+            execute_run(
+                args.profile,
+                args.objective,
+                args.headless,
+                adapter_name=args.adapter,
+                model_name=args.model,
+            )
+        )
         sys.exit(exit_code)
     else:
         # Por defecto muestra ayuda

@@ -87,11 +87,24 @@ class BudgetManager:
         if reservation_id not in self.reservations:
             raise KeyError(f"Reserva inexistente o ya finalizada: {reservation_id}")
 
-        reserved_amt = self.reservations.pop(reservation_id)
-        self.reserved_spend_usd = max(Decimal("0.00"), self.reserved_spend_usd - reserved_amt)
+        try:
+            spent = Decimal(str(actual_spend))
+        except Exception as exc:
+            raise ValueError("Gasto monetario inválido.") from exc
+        if not spent.is_finite() or spent < 0:
+            raise ValueError("El gasto debe ser finito y no negativo.")
 
-        spent = Decimal(str(actual_spend))
-        self.confirmed_spend_usd += spent
+        reserved_amt = self.reservations[reservation_id]
+        new_confirmed = self.confirmed_spend_usd + spent
+        if spent > reserved_amt or new_confirmed > self.limit_usd:
+            self._persist_state()
+            raise BudgetExceededError(
+                f"El gasto ({spent}) excede la reserva ({reserved_amt}) o el límite ({self.limit_usd})."
+            )
+
+        self.reservations.pop(reservation_id)
+        self.reserved_spend_usd = max(Decimal("0.00"), self.reserved_spend_usd - reserved_amt)
+        self.confirmed_spend_usd = new_confirmed
         self.calls_completed += 1
         self.tokens_consumed += max(0, tokens_used)
         self._persist_state()
@@ -136,7 +149,7 @@ class BudgetManager:
             return
         content = self.storage_path.read_text(encoding="utf-8")
         state = BudgetState.model_validate_json(content)
-        self.limit_usd = Decimal(state.limit_usd)
+        # Mantener el límite fijado por la política/operador; nunca aceptar que un archivo lo aumente
         self.confirmed_spend_usd = Decimal(state.confirmed_spend_usd)
         self.reserved_spend_usd = Decimal(state.reserved_spend_usd)
         self.max_calls = state.max_calls

@@ -6,6 +6,7 @@ from typing import Optional
 from pydantic import ValidationError
 
 from web_agent.audit.events import AuditEvent, AuditLogger
+from web_agent.browser.observe import DOMObserver
 from web_agent.core.errors import (
     ActionNotVerifiedError,
     AuditUnavailableError,
@@ -16,6 +17,7 @@ from web_agent.core.policy import SecurityPolicyEnforcer
 from web_agent.core.schemas import (
     MAX_OBJECTIVE_CHARS,
     ActionType,
+    ElementRef,
     FinalState,
     PageObservation,
     ProposedAction,
@@ -53,6 +55,7 @@ class AgentRunner:
         )
 
         self._running = False
+        self._current_elements: dict[str, ElementRef] = {}
 
     def _result(
         self,
@@ -231,14 +234,27 @@ class AgentRunner:
         ):
             raise PolicyViolationError("Página fuera del ámbito permitido.")
 
-        title = await page.title()
+        snapshot = await DOMObserver.capture_observation(page)
+        elements_list = []
+        for eid, item in snapshot.elements.items():
+            elements_list.append(
+                ElementRef(
+                    element_id=eid,
+                    role=item.role,
+                    name=item.name,
+                    enabled=item.is_enabled,
+                    form_submit=(item.role == "button" and "submit" in (item.form_context or "").lower()),
+                    context="form" if item.form_context else "page",
+                    unique=True,
+                )
+            )
+        self._current_elements = {el.element_id: el for el in elements_list}
         observation = PageObservation(
             url=DataRedactor.redact(page.url),
-            title=DataRedactor.redact(title)[:300],
-            # No inventar elementos que aún no se han observado.
-            elements=(),
+            title=DataRedactor.redact(snapshot.title)[:300],
+            elements=tuple(elements_list),
             visible_text="",
-            truncated=len(title) > 300,
+            truncated=len(snapshot.title) > 300,
         )
         return observation.to_model_prompt()
 
@@ -315,7 +331,7 @@ class AgentRunner:
             # Sin reintentos: no existe aún un contrato de repetición seguro.
             try:
                 await asyncio.wait_for(
-                    self._execute_navigation(action),
+                    self._execute_action(action),
                     timeout=self.profile.execution.action_timeout_ms / 1000.0,
                 )
             except PolicyViolationError:
@@ -325,13 +341,13 @@ class AgentRunner:
                     run_id,
                     progress,
                     FinalState.FAILED,
-                    "Resultado de navegación no verificable. No se repite.",
+                    f"Resultado de acción {action.action_type.value} no verificable. No se repite.",
                 )
 
             await self._audit(
                 run_id,
                 action.action_type.value,
-                "Respuesta y destino final comprobados.",
+                "Acción ejecutada y verificada.",
                 True,
             )
 
@@ -342,12 +358,28 @@ class AgentRunner:
             "Límite de pasos alcanzado.",
         )
 
-    async def _execute_navigation(self, action: ProposedAction):
+    async def _execute_action(self, action: ProposedAction):
         self.policy_enforcer.validate_action(action)
 
-        if action.action_type != ActionType.NAVIGATE:
-            raise PolicyViolationError("Operación no implementada.")
+        page = self.browser.page
+        if page is None or page.is_closed():
+            raise ActionNotVerifiedError("No existe página activa.")
 
+        t = action.action_type
+        if t == ActionType.NAVIGATE:
+            await self._execute_navigation(action)
+        elif t == ActionType.CLICK:
+            await self._execute_click(action)
+        elif t == ActionType.FILL:
+            await self._execute_fill(action)
+        elif t == ActionType.SUBMIT:
+            await self._execute_submit(action)
+        elif t == ActionType.EXTRACT:
+            await self._execute_extract(action)
+        else:
+            raise PolicyViolationError(f"Tipo de acción no soportado: {t}")
+
+    async def _execute_navigation(self, action: ProposedAction):
         page = self.browser.page
         if page is None or page.is_closed():
             raise ActionNotVerifiedError("No existe página activa.")
@@ -363,6 +395,89 @@ class AgentRunner:
 
         if response is None or not 200 <= response.status < 400:
             raise ActionNotVerifiedError("Respuesta HTTP no verificable.")
+
+    async def _execute_click(self, action: ProposedAction):
+        page = self.browser.page
+        if not action.target_element_id or action.target_element_id not in self._current_elements:
+            raise ActionNotVerifiedError(f"Elemento {action.target_element_id} no encontrado en la observación actual.")
+
+        el = self._current_elements[action.target_element_id]
+        locator = page.get_by_role(el.role, name=el.name, exact=True)
+        count = await locator.count()
+        if count != 1:
+            locator = page.get_by_text(el.name, exact=True)
+            count = await locator.count()
+            if count != 1:
+                raise ActionNotVerifiedError("Objetivo de clic ambiguo o no encontrado.")
+
+        if not await locator.is_visible() or await locator.is_disabled():
+            raise ActionNotVerifiedError("Elemento no accionable (oculto o deshabilitado).")
+
+        await locator.click(timeout=self.profile.execution.action_timeout_ms)
+        await page.wait_for_load_state("domcontentloaded")
+
+    async def _execute_fill(self, action: ProposedAction):
+        page = self.browser.page
+        if not action.target_element_id or action.target_element_id not in self._current_elements:
+            raise ActionNotVerifiedError(f"Elemento {action.target_element_id} no encontrado en la observación actual.")
+
+        el = self._current_elements[action.target_element_id]
+        val = action.value
+        if val is None:
+            for inp in self.profile.inputs:
+                if inp.key == action.target_element_id or inp.key in el.name.lower():
+                    val = inp.value
+                    break
+        if val is None:
+            raise ActionNotVerifiedError("Valor para fill no proporcionado ni resuelto en catálogo.")
+
+        locator = page.get_by_role(el.role, name=el.name, exact=True)
+        count = await locator.count()
+        if count != 1:
+            locator = page.get_by_label(el.name, exact=True)
+            count = await locator.count()
+            if count != 1:
+                locator = page.locator(f"input[name='{el.name}'], textarea[name='{el.name}']")
+                count = await locator.count()
+                if count != 1:
+                    raise ActionNotVerifiedError("Campo de formulario ambiguo o no encontrado.")
+
+        if not await locator.is_visible() or await locator.is_disabled():
+            raise ActionNotVerifiedError("Campo no editable.")
+
+        await locator.fill(val, timeout=self.profile.execution.action_timeout_ms)
+        actual_val = await locator.input_value()
+        if actual_val != val:
+            raise ActionNotVerifiedError("El valor introducido no coincide con el valor esperado.")
+
+    async def _execute_submit(self, action: ProposedAction):
+        page = self.browser.page
+        if not action.target_element_id or action.target_element_id not in self._current_elements:
+            raise ActionNotVerifiedError(f"Elemento {action.target_element_id} no encontrado en la observación actual.")
+
+        el = self._current_elements[action.target_element_id]
+        locator = page.get_by_role(el.role, name=el.name, exact=True)
+        if await locator.count() != 1:
+            locator = page.locator(f"button[type='submit']:has-text('{el.name}')")
+            if await locator.count() != 1:
+                raise ActionNotVerifiedError("Botón de envío ambiguo o no encontrado.")
+
+        await locator.click(timeout=self.profile.execution.action_timeout_ms)
+        await page.wait_for_load_state("domcontentloaded")
+
+    async def _execute_extract(self, action: ProposedAction):
+        page = self.browser.page
+        if action.target_element_id:
+            if action.target_element_id not in self._current_elements:
+                raise ActionNotVerifiedError(f"Elemento {action.target_element_id} no encontrado.")
+            el = self._current_elements[action.target_element_id]
+            locator = page.get_by_role(el.role, name=el.name, exact=True)
+            if await locator.count() != 1:
+                locator = page.get_by_text(el.name, exact=True)
+            text = await locator.inner_text()
+        else:
+            text = await page.inner_text("body")
+        return text
 
     async def _verify_success(self) -> bool:
         condition = self.profile.verification.success_condition

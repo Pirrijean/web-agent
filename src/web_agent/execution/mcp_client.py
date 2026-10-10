@@ -50,7 +50,7 @@ class RPC:
 
     async def call(self, name: str, **arguments):
         result = await self.session.call_tool(name, arguments=arguments)
-        if result.isError:
+        if getattr(result, "is_error", False) or getattr(result, "isError", False):
             raise RuntimeError("La herramienta MCP rechazó la operación.")
 
         texts = [

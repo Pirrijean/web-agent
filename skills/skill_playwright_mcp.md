@@ -12,18 +12,17 @@ Para que esta skill funcione en la arquitectura, el agente constructor debe prep
 2.  **Instalar dependencias del núcleo:**
     `uv pip install playwright pydantic pytest`
 3.  **Instalar el motor del navegador aislado:**
-    `playwright install chromium`
-4.  **Requisito externo:** Asegurar que Node.js está instalado en el sistema (`npx` es requerido para el servidor MCP).
-
-## 3. Configuración MCP (El Contrato)
-El agente constructor debe inyectar la siguiente configuración JSON en el orquestador principal para habilitar la skill:
-
-```json
-{
-  "mcpServers": {
-    "playwright-web": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-playwright"]
-    }
-  }
-}
+    `playwright install chromium` 
+17: ## 3. Configuración MCP (El Contrato Seguro)
+18: El agente debe utilizar exclusivamente el servidor MCP restringido propio de `web-agent`:
+19: 
+20: ```json
+21: {
+22:   "mcpServers": {
+23:     "restricted-browser": {
+24:       "command": "uv",
+25:       "args": ["run", "python", "-m", "web_agent.mcp_servers.browser_server"]
+26:     }
+27:   }
+28: }
+29: ```

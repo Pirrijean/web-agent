@@ -1,17 +1,22 @@
 {
     "skill_name": "playwright_browser_control",
-    "description": "Control de navegador restringido. Las acciones deben canalizarse obligatoriamente por el núcleo de seguridad de web-agent.",
+    "description": "Control de navegador restringido. Las acciones se canalizan obligatoriamente por el núcleo de seguridad de web-agent.",
     "type": "mcp_server",
-    "status": "disabled_pending_restricted_server",
+    "status": "enabled",
     "execution": {
         "command": "uv",
         "args": [
             "run",
-            "pytest"
+            "python",
+            "-m",
+            "web_agent.mcp_servers.browser_server"
         ]
     },
     "security_policy": {
         "require_human_approval_for_destructive_actions": true,
-        "allowed_domains": []
+        "allowed_domains": [
+            "https://portal.example.com",
+            "https://test.example.org"
+        ]
     }
 }

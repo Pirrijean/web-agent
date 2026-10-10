@@ -49,12 +49,14 @@ class OpenRouterModelAdapter(BaseModelAdapter):
             "page_state": page_state,
         }, ensure_ascii=False)
 
+        dispatched = False
         try:
             async with httpx.AsyncClient(
                 timeout=self.timeout_seconds,
                 follow_redirects=False,
                 trust_env=False,
             ) as client:
+                dispatched = True
                 response = await client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={
@@ -94,5 +96,12 @@ class OpenRouterModelAdapter(BaseModelAdapter):
 
         except Exception as exc:
             if self.budget_manager is not None and res_id is not None:
-                self.budget_manager.release(res_id)
-            raise ModelOutputError(f"Fallo al consultar OpenRouter: {exc}") from exc
+                if not dispatched:
+                    self.budget_manager.release(res_id)
+                else:
+                    # Si ya fue enviado, liquidar contra la reserva para no fugar presupuesto
+                    try:
+                        self.budget_manager.confirm(res_id, actual_spend=self.max_cost_per_call)
+                    except Exception:
+                        pass
+            raise ModelOutputError("Fallo al consultar el proveedor de modelo externo.") from exc
