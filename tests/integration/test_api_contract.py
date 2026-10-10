@@ -98,7 +98,9 @@ def test_health_not_ready_without_model(tmp_path):
     settings = Settings(bearer_token=TOKEN, model_provider="openrouter", openrouter_api_key=None,
                         audit_dir=str(tmp_path))
     with TestClient(create_app(settings)) as c:
-        assert c.get("/health", headers=AUTH).status_code == 503
+        r = c.get("/health", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["model_configured"] is False
 
 
 def test_post_returns_task_id_fast_and_task_completes(make_client):
